@@ -64,4 +64,18 @@
     <sys:String x:Key="LOCPaSuccessStoryPluginView">View SuccessStory datas</sys:String>
     <sys:String x:Key="LOCPaScreenshotsVisualizerPluginView">View ScreenshotsVisualizer datas</sys:String>
 
+
+    <!-- Date Filter -->
+
+    <sys:String x:Key="LOCPaDateFilter">Date Filter</sys:String>
+    <sys:String x:Key="LOCPaDateFilterFrom">From</sys:String>
+    <sys:String x:Key="LOCPaDateFilterTo">To</sys:String>
+    <sys:String x:Key="LOCPaDateFilterLast7Days">Last 7 Days</sys:String>
+    <sys:String x:Key="LOCPaDateFilterLast30Days">Last 30 Days</sys:String>
+    <sys:String x:Key="LOCPaDateFilterLast90Days">Last 90 Days</sys:String>
+    <sys:String x:Key="LOCPaDateFilterLast180Days">Last 180 Days</sys:String>
+    <sys:String x:Key="LOCPaDateFilterLast365Days">Last 365 Days</sys:String>
+    <sys:String x:Key="LOCPaDateFilterAllTime">All Time</sys:String>
+    <sys:String x:Key="LOCPaDateFilterCustom">Custom Range</sys:String>
+
 </ResourceDictionary>

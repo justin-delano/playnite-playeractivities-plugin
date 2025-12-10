@@ -543,13 +543,15 @@ namespace PlayerActivities.Services
         /// Retrieves activities related to a specific game identified by its Guid.
         /// </summary>
         /// <param name="id">The unique identifier (Guid) of the game to filter activities for.</param>
+        /// <param name="startDate">Optional start date to filter activities from.</param>
+        /// <param name="endDate">Optional end date to filter activities until.</param>
         /// <returns>
         /// An <see cref="ObservableCollection{ActivityListGrouped}"/> containing only
         /// the activities associated with the specified game. Returns an empty collection if none are found.
         /// </returns>
-        public ObservableCollection<ActivityListGrouped> GetActivitiesData(Guid id)
+        public ObservableCollection<ActivityListGrouped> GetActivitiesData(Guid id, DateTime? startDate = null, DateTime? endDate = null)
         {
-            ObservableCollection<ActivityListGrouped> data = GetActivitiesData(false);
+            ObservableCollection<ActivityListGrouped> data = GetActivitiesData(grouped: false, startDate: startDate, endDate: endDate);
             return new ObservableCollection<ActivityListGrouped>(data.Where(x => x.GameContext.Id == id));
         }
 
@@ -560,11 +562,13 @@ namespace PlayerActivities.Services
         /// If <c>true</c>, groups activities by game and relative time period ("TimeAgo").
         /// If <c>false</c>, each activity is listed independently, grouped only by game.
         /// </param>
+        /// <param name="startDate">Optional start date to filter activities from.</param>
+        /// <param name="endDate">Optional end date to filter activities until.</param>
         /// <returns>
         /// An <see cref="ObservableCollection{ActivityListGrouped}"/> containing grouped activity data,
         /// ordered by date descending. Returns an empty collection if no activity matches the configured types.
         /// </returns>
-        public ObservableCollection<ActivityListGrouped> GetActivitiesData(bool grouped = true)
+        public ObservableCollection<ActivityListGrouped> GetActivitiesData(bool grouped = true, DateTime? startDate = null, DateTime? endDate = null)
         {
             // Step 1: Flatten all activity items from games that exist in the database
             var activityLists = Database
@@ -598,9 +602,22 @@ namespace PlayerActivities.Services
                 activityTypes.Add(ActivityType.AchievementsUnlocked);
             }
 
-            // Step 3: Filter and group activity data
-            var filteredActivities = activityLists.Where(x => activityTypes.Contains(x.Type));
+            // Step 3: Filter activities by type and date range
+            var filteredActivities = activityLists
+                .Where(x => activityTypes.Contains(x.Type));
 
+            // Apply date filtering if enabled
+            if (startDate.HasValue)
+            {
+                filteredActivities = filteredActivities.Where(x => x.DateActivity >= startDate.Value.Date);
+            }
+
+            if (endDate.HasValue)
+            {
+                filteredActivities = filteredActivities.Where(x => x.DateActivity <= endDate.Value.Date);
+            }
+
+            // Step 4: Group activity data
             var groupedActivities = new ObservableCollection<ActivityListGrouped>();
 
             foreach (var activity in filteredActivities)
@@ -638,7 +655,7 @@ namespace PlayerActivities.Services
                 }
             }
 
-            // Step 4: Sort activities within each group
+            // Step 5: Sort activities within each group
             foreach (var group in groupedActivities)
             {
                 group.Activities = group.Activities

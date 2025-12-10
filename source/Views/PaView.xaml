@@ -140,29 +140,79 @@
                 <!-- Filter -->
                 <Border Grid.Row="0" BorderThickness="{DynamicResource PopupBorderThickness}" BorderBrush="{DynamicResource NormalBorderBrush}">
                     <Grid Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="auto" />
-                            <ColumnDefinition Width="6" />
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="auto" />
-                            <ColumnDefinition Width="6" />
-                            <ColumnDefinition Width="250" />
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto" />
+                            <RowDefinition Height="5" />
+                            <RowDefinition Height="auto" />
+                        </Grid.RowDefinitions>
+                        
+                        <!-- First row: Search and Source filters -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="250" />
+                            </Grid.ColumnDefinitions>
 
-                        <Label Grid.Column="0" Content="{DynamicResource LOCSearchLabel}" FontSize="16" />
-                        <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" TextChanged="TextboxSearch_TextChanged" />
+                            <Label Grid.Column="0" Content="{DynamicResource LOCSearchLabel}" FontSize="16" />
+                            <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" TextChanged="TextboxSearch_TextChanged" />
 
-                        <Label Grid.Column="4" Content="{DynamicResource LOCSourceLabel}" FontSize="16" />
-                        <ComboBox Grid.Column="6" Name="FilterSource" ItemsSource="{Binding FilterSourceItems}" IsEditable="True" IsReadOnly="True">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <CheckBox Name="chkSource" Checked="ChkSource_Checked" Unchecked="ChkSource_Unchecked" Tag="{Binding SourceNameShort}"
-                                              Content="{Binding SourceName}" IsChecked="{Binding IsCheck, Mode=TwoWay}" FontFamily="{DynamicResource CommonFont}">
-                                    </CheckBox>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
+                            <Label Grid.Column="4" Content="{DynamicResource LOCSourceLabel}" FontSize="16" />
+                            <ComboBox Grid.Column="6" Name="FilterSource" ItemsSource="{Binding FilterSourceItems}" IsEditable="True" IsReadOnly="True">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Name="chkSource" Checked="ChkSource_Checked" Unchecked="ChkSource_Unchecked" Tag="{Binding SourceNameShort}"
+                                                  Content="{Binding SourceName}" IsChecked="{Binding IsCheck, Mode=TwoWay}" FontFamily="{DynamicResource CommonFont}">
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Second row: Date filter -->
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Label Grid.Column="0" Content="{DynamicResource LOCPaDateFilter}" FontSize="16" />
+                            <ComboBox Grid.Column="2" Name="CbDateFilter" 
+                                      ItemsSource="{Binding DateFilterOptions}" 
+                                      SelectedItem="{Binding SelectedDateFilter, Mode=TwoWay}"
+                                      DisplayMemberPath="Name"
+                                      SelectionChanged="CbDateFilter_SelectionChanged" />
+
+                            <Label Grid.Column="4" Content="{DynamicResource LOCPaDateFilterFrom}" FontSize="16" 
+                                   Name="LblStartDate"
+                                   Visibility="Collapsed" />
+                            <DatePicker Grid.Column="6" Name="DpStartDate" 
+                                        SelectedDate="{Binding CustomStartDate, Mode=TwoWay}"
+                                        SelectedDateChanged="DatePicker_SelectedDateChanged"
+                                        Visibility="Collapsed" />
+
+                            <Label Grid.Column="8" Content="{DynamicResource LOCPaDateFilterTo}" FontSize="16" 
+                                   Name="LblEndDate"
+                                   Visibility="Collapsed" />
+                            <DatePicker Grid.Column="10" Name="DpEndDate" 
+                                        SelectedDate="{Binding CustomEndDate, Mode=TwoWay}"
+                                        SelectedDateChanged="DatePicker_SelectedDateChanged"
+                                        Visibility="Collapsed" />
+                        </Grid>
                     </Grid>
                 </Border>
 
