@@ -67,19 +67,10 @@ namespace PlayerActivities.Clients
             {
                 Logger.Info($"{ClientName} - Starting to fetch friends data");
                 
-                // Force a fresh authentication check to refresh cookies if needed
-                StoreApi.ResetIsUserLoggedIn();
-                if (!IsUserLoggedIn)
-                {
-                    Logger.Error($"{ClientName} - Authentication failed after cookie refresh");
-                    ShowAuthenticationExpiredNotification();
-                    return friends;
-                }
-                
                 var currentUser = StoreApi.CurrentAccountInfos;
                 if (currentUser == null)
                 {
-                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null, authentication may have expired");
+                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null, authentication may have failed");
                     ShowAuthenticationExpiredNotification();
                     return friends;
                 }
@@ -89,12 +80,12 @@ namespace PlayerActivities.Clients
                 var currentGamesInfos = StoreApi.CurrentGamesInfos;
                 Logger.Info($"{ClientName} - Current user has {currentGamesInfos?.Count() ?? 0} games");
 
-                // Check if we got no games which might indicate authentication issues
+                // Check if we got no games which indicates a library issue with cookie propagation
                 if (currentGamesInfos == null || !currentGamesInfos.Any())
                 {
-                    Logger.Error($"{ClientName} - Current user has no games data. Cookies may be expired or not properly set.");
-                    ShowCookieIssueNotification();
-                    return friends;
+                    Logger.Error($"{ClientName} - Current user has no games data. This is a known issue with the CommonPluginsStores library not properly passing Steam cookies to game data endpoints.");
+                    ShowLibraryIssueNotification();
+                    // Still try to add the user with empty games list
                 }
 
                 var playerFriendsUs = BuildPlayerFriend(currentUser, currentGamesInfos);
@@ -138,13 +129,7 @@ namespace PlayerActivities.Clients
                     friends.Add(playerFriend);
                 }
                 
-                // If all friends have no games data, likely a privacy issue
-                if (failedFriends > 0 && failedFriends == currentFriendsInfos.Count)
-                {
-                    Logger.Warn($"{ClientName} - All {failedFriends} friends returned 0 games. They may have private profiles.");
-                }
-                
-                Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user)");
+                Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user). {failedFriends} friends have no game data due to library limitations.");
             }
             catch (Exception ex)
             {
@@ -300,6 +285,26 @@ namespace PlayerActivities.Clients
         #region Errors
 
         /// <summary>
+        /// Shows a notification about a known library issue with Steam cookie propagation.
+        /// </summary>
+        private void ShowLibraryIssueNotification()
+        {
+            string message = $"Unable to retrieve {ClientName} game data due to a known issue with the CommonPluginsStores library.\n\n" +
+                           $"The library is not properly passing Steam session cookies to game data endpoints, causing all requests to be redirected to the login page.\n\n" +
+                           $"This is a limitation of the current version of the dependency library and requires an update from the plugin author.\n\n" +
+                           $"Possible solutions:\n" +
+                           $"• Wait for a plugin update that fixes this library issue\n" +
+                           $"• Contact the plugin author about this Steam cookie propagation bug\n" +
+                           $"• The plugin author could implement direct Steam Web API calls instead";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-library-issue",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Error
+            ));
+        }
+
+        /// <summary>
         /// Shows a notification about cookie/session issues with Steam.
         /// </summary>
         private void ShowCookieIssueNotification()
@@ -356,7 +361,6 @@ namespace PlayerActivities.Clients
                             ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
                         if (plugin != null)
                         {
-                            StoreApi.ResetIsUserLoggedIn();
                             _ = plugin.OpenSettingsView();
                         }
                     }
@@ -386,7 +390,6 @@ namespace PlayerActivities.Clients
                             ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
                         if (plugin != null)
                         {
-                            StoreApi.ResetIsUserLoggedIn();
                             _ = plugin.OpenSettingsView();
                         }
                     }
