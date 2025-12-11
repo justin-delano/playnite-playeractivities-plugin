@@ -150,8 +150,7 @@ namespace PlayerActivities.Views
                             filteredData.Add(new ActivityListGrouped
                             {
                                 GameContext = group.GameContext,
-                                Activities = filteredActivities.ToObservable(),
-                                ActivitiesOrdered = filteredActivities.OrderByDescending(a => a.DateActivity).ToObservable()
+                                Activities = filteredActivities
                             });
                         }
                     }
