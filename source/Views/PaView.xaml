@@ -159,7 +159,7 @@
                             </Grid.ColumnDefinitions>
 
                             <Label Grid.Column="0" Content="{DynamicResource LOCSearchLabel}" FontSize="16" />
-                            <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" TextChanged="TextboxSearch_TextChanged" />
+                            <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" KeyDown="TextboxSearch_KeyDown" />
 
                             <Label Grid.Column="4" Content="{DynamicResource LOCSourceLabel}" FontSize="16" />
                             <ComboBox Grid.Column="6" Name="FilterSource" ItemsSource="{Binding FilterSourceItems}" IsEditable="True" IsReadOnly="True">

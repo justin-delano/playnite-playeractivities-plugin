@@ -206,9 +206,12 @@ namespace PlayerActivities.Views
 
         #region Filter
 
-        private void TextboxSearch_TextChanged(object sender, TextChangedEventArgs e)
+        private void TextboxSearch_KeyDown(object sender, KeyEventArgs e)
         {
-            _collectionView?.Refresh();
+            if (e.Key == Key.Enter)
+            {
+                _collectionView?.Refresh();
+            }
         }
 
         private void ChkSource_Checked(object sender, RoutedEventArgs e)
