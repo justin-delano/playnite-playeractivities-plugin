@@ -468,6 +468,10 @@ namespace CommonPluginsShared
                 Logger.Warn($"Maximum redirect depth {MaxRedirects} reached for {url}");
                 return string.Empty;
             }
+            
+            Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Requesting {url}");
+            Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Starting with {cookies?.Count ?? 0} cookies");
+            
             HttpClientHandler handler = new HttpClientHandler
             {
                 AllowAutoRedirect = false,  // Manually handle redirects to preserve cookies
@@ -479,6 +483,7 @@ namespace CommonPluginsShared
             {
                 cookieContainer = CreateCookiesContainer(cookies);
                 handler.CookieContainer = cookieContainer;
+                Logger.Info($"DownloadStringData() - Depth {redirectDepth}: CookieContainer created with {cookieContainer.Count} cookies");
             }
 
             var request = new HttpRequestMessage()
@@ -503,6 +508,8 @@ namespace CommonPluginsShared
                 {
                     response = await client.SendAsync(request).ConfigureAwait(false);
                     int statusCode = (int)response.StatusCode;
+                    Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Received status code {statusCode}");
+                    
                     bool IsRedirected = statusCode >= 300 && statusCode <= 399;
 
                     // We want to handle redirects ourselves so that we can determine the final redirect Location (via header)
@@ -511,7 +518,7 @@ namespace CommonPluginsShared
                         var redirectUri = response.Headers.Location;
                         if (redirectUri == null)
                         {
-                            Logger.Warn($"Redirect response missing Location header for {url}");
+                            Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: Redirect response missing Location header for {url}");
                             return string.Empty;
                         }
                         
@@ -521,6 +528,7 @@ namespace CommonPluginsShared
                         }
                         
                         string urlNew = redirectUri.ToString();
+                        Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Redirecting from {url} to {urlNew}");
 
                         if (keepParam)
                         {
@@ -549,12 +557,31 @@ namespace CommonPluginsShared
                         if (cookieContainer != null)
                         {
                             updatedCookies = ExtractCookiesFromContainer(cookieContainer);
+                            Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Extracted {updatedCookies?.Count ?? 0} cookies from container for redirect");
+                            
+                            if (updatedCookies != null && cookies != null)
+                            {
+                                int newCookies = updatedCookies.Count - cookies.Count;
+                                if (newCookies > 0)
+                                {
+                                    Logger.Info($"DownloadStringData() - Depth {redirectDepth}: {newCookies} new cookies added by server");
+                                }
+                                else if (newCookies < 0)
+                                {
+                                    Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: {Math.Abs(newCookies)} cookies lost during extraction");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: No cookie container available for redirect");
                         }
                         
                         return await DownloadStringData(urlNew, updatedCookies, userAgent, keepParam, redirectDepth + 1);
                     }
                     else
                     {
+                        Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Success, returning response content (length: {response.Content.Headers.ContentLength ?? -1})");
                         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
 
@@ -563,16 +590,18 @@ namespace CommonPluginsShared
                 {
                     if (ex.Message.Contains("Section=ResponseHeader Detail=CR"))
                     {
-                        Logger.Warn($"Used UserAgent: Anything");
+                        Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: Header parsing error, retrying with different UserAgent");
                         return DownloadStringData(url, cookies, "Anything").GetAwaiter().GetResult();
                     }
                     else
                     {
+                        Logger.Error(ex, $"DownloadStringData() - Depth {redirectDepth}: Error on Get {url}");
                         Common.LogError(ex, false, $"Error on Get {url}");
                     }
                 }
             }
 
+            Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: Returning empty string (unexpected path)");
             return string.Empty;
         }
 
@@ -1013,6 +1042,7 @@ namespace CommonPluginsShared
             int errorCount = 0;
 
             var cookiesByDomain = cookies.GroupBy(c => c.Domain ?? "null");
+            Logger.Info($"CreateCookiesContainer() - Processing {cookies.Count} cookies from {cookiesByDomain.Count()} domains");
             Common.LogDebug(true, $"Cookies distribution: {string.Join(", ", cookiesByDomain.Select(g => $"{g.Key}={g.Count()}"))}");
 
             foreach (HttpCookie cookie in cookies)
@@ -1041,6 +1071,12 @@ namespace CommonPluginsShared
                     if (cookie.Expires.HasValue)
                     {
                         c.Expires = cookie.Expires.Value;
+                        
+                        // Log if cookie is expired
+                        if (cookie.Expires.Value <= DateTime.Now)
+                        {
+                            Logger.Warn($"Adding expired cookie: {cookie.Name} (Domain: {cookie.Domain}, Expired: {cookie.Expires.Value})");
+                        }
                     }
 
                     cookieContainer.Add(c);
@@ -1058,6 +1094,7 @@ namespace CommonPluginsShared
                 }
             }
 
+            Logger.Info($"CreateCookiesContainer() - Result: {addedCount} added, {skippedCount} skipped, {errorCount} errors from {cookies.Count} total");
             Common.LogDebug(true, $"CookieContainer: {addedCount} added, {skippedCount} skipped, {errorCount} errors from {cookies.Count} total");
             Common.LogDebug(true, $"Final container count: {cookieContainer.Count}");
 
@@ -1076,8 +1113,11 @@ namespace CommonPluginsShared
             
             if (container == null)
             {
+                Logger.Warn("ExtractCookiesFromContainer() - Container is null");
                 return httpCookies;
             }
+
+            Logger.Info($"ExtractCookiesFromContainer() - Container has {container.Count} cookies");
 
             // Use reflection to access the internal cookie collection
             // CookieContainer doesn't provide a public API to enumerate all cookies
@@ -1092,8 +1132,10 @@ namespace CommonPluginsShared
 
                 if (table != null)
                 {
+                    int domainCount = 0;
                     foreach (var tableEntry in (System.Collections.IEnumerable)table)
                     {
+                        domainCount++;
                         var values = tableEntry.GetType().GetProperty("Value").GetValue(tableEntry, null);
                         if (values != null)
                         {
@@ -1119,13 +1161,19 @@ namespace CommonPluginsShared
                             }
                         }
                     }
+                    Logger.Info($"ExtractCookiesFromContainer() - Extracted {httpCookies.Count} cookies from {domainCount} domains");
+                }
+                else
+                {
+                    Logger.Warn("ExtractCookiesFromContainer() - Domain table is null");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Failed to extract cookies from CookieContainer, using fallback");
+                Logger.Warn(ex, $"ExtractCookiesFromContainer() - Failed to extract cookies from CookieContainer (extracted {httpCookies.Count} so far), using fallback");
             }
 
+            Logger.Info($"ExtractCookiesFromContainer() - Returning {httpCookies.Count} cookies");
             return httpCookies;
         }
 
