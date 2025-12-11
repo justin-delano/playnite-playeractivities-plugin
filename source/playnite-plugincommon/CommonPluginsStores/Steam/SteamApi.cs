@@ -408,7 +408,7 @@ namespace CommonPluginsStores.Steam
         {
             try
             {
-                if (CurrentAccountInfos != null && CurrentAccountInfos.IsCurrent)
+                if (CurrentAccountInfos != null)
                 {
                     ObservableCollection<AccountGameInfos> accountGameInfos = StoreSettings.UseAuth || CurrentAccountInfos.IsPrivate || !StoreSettings.UseApi || CurrentAccountInfos.ApiKey.IsNullOrEmpty()
                         ? GetAccountGamesInfosByWeb(accountInfos)
