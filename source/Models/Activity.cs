@@ -38,6 +38,18 @@ namespace PlayerActivities.Models
         public ulong Value { get; set; }
 
         /// <summary>
+        /// The Steam ID or platform ID of the friend who performed this activity.
+        /// Null for player's own activities.
+        /// </summary>
+        public string FriendId { get; set; }
+
+        /// <summary>
+        /// The display name of the friend who performed this activity.
+        /// Null for player's own activities.
+        /// </summary>
+        public string FriendName { get; set; }
+
+        /// <summary>
         /// A human-readable string representing how long ago the activity occurred (e.g., "1 year, 2 months").
         /// Not serialized.
         /// </summary>
