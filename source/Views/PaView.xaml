@@ -195,7 +195,9 @@
                 <!-- Player time line -->
                 <Grid Name="PART_GridContener" Grid.Row="2">
                     <ListBox ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
-                             ScrollViewer.VerticalScrollBarVisibility="Auto" 
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="False"
+                             VirtualizingPanel.ScrollUnit="Pixel"
                              Name="PART_LbTimeLine"
                              ItemsSource="{Binding ItemsSource}" BorderThickness="0"
                              Width="{Binding ElementName=PART_GridContener, Path=ActualWidth}"

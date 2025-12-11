@@ -70,7 +70,8 @@ namespace PlayerActivities.Clients
                 var currentUser = StoreApi.CurrentAccountInfos;
                 if (currentUser == null)
                 {
-                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null");
+                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null, authentication may have expired");
+                    ShowAuthenticationExpiredNotification();
                     return friends;
                 }
                 
@@ -78,6 +79,12 @@ namespace PlayerActivities.Clients
                 
                 var currentGamesInfos = StoreApi.CurrentGamesInfos;
                 Logger.Info($"{ClientName} - Current user has {currentGamesInfos?.Count() ?? 0} games");
+
+                // Check if we got no games which might indicate authentication issues
+                if (currentGamesInfos == null || !currentGamesInfos.Any())
+                {
+                    Logger.Warn($"{ClientName} - No games data available, this may indicate expired authentication");
+                }
 
                 var playerFriendsUs = BuildPlayerFriend(currentUser, currentGamesInfos);
                 friends.Add(playerFriendsUs);
@@ -93,6 +100,8 @@ namespace PlayerActivities.Clients
 
                 PluginDatabase.FriendsDataLoading.FriendCount = currentFriendsInfos.Count;
 
+                int failedFriends = 0;
+                
                 // Enumerate friends and add with stats and games
                 foreach (var friend in currentFriendsInfos)
                 {
@@ -106,10 +115,23 @@ namespace PlayerActivities.Clients
                     Logger.Info($"{ClientName} - Fetching data for friend: {friend.Pseudo}");
 
                     var playerFriend = BuildPlayerFriend(friend);
+                    
+                    if (playerFriend.Games.Count == 0)
+                    {
+                        failedFriends++;
+                    }
+                    
                     Logger.Info($"{ClientName} - Friend {friend.Pseudo} has {playerFriend.Games.Count} games, {playerFriend.Stats.Achievements} achievements");
                     
                     PluginDatabase.FriendsDataLoading.ActualCount++;
                     friends.Add(playerFriend);
+                }
+                
+                // If all friends have no games data, likely an authentication issue
+                if (failedFriends > 0 && failedFriends == currentFriendsInfos.Count)
+                {
+                    Logger.Error($"{ClientName} - All {failedFriends} friends returned 0 games. Authentication cookies likely expired.");
+                    ShowAuthenticationExpiredNotification();
                 }
                 
                 Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user)");
@@ -263,6 +285,36 @@ namespace PlayerActivities.Clients
         #endregion
 
         #region Errors
+
+        /// <summary>
+        /// Shows a notification error when authentication cookies have expired.
+        /// Offers to open the plugin settings for re-authentication.
+        /// </summary>
+        private void ShowAuthenticationExpiredNotification()
+        {
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-expired-auth",
+                $"{PluginDatabase.PluginName}\r\n{ClientName} authentication has expired. Please re-authenticate in the plugin settings to fetch friends data.",
+                NotificationType.Error,
+                () =>
+                {
+                    try
+                    {
+                        Plugin plugin = API.Instance.Addons.Plugins.Find(x => x.Id == PlayniteTools.GetPluginId(
+                            ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
+                        if (plugin != null)
+                        {
+                            StoreApi.ResetIsUserLoggedIn();
+                            _ = plugin.OpenSettingsView();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
 
         /// <summary>
         /// Shows a notification error when plugin authentication is missing or failed.
