@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Threading;
+using System.Windows.Input;
 
 namespace PlayerActivities.Views
 {
@@ -218,6 +219,43 @@ namespace PlayerActivities.Views
 
             // Reload data with new date filter
             GetData();
+        }
+
+        private void ScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            // Pass mouse wheel events to parent to prevent scroll getting stuck
+            if (sender is ScrollViewer scrollViewer)
+            {
+                // Get the parent ScrollViewer (the main ListBox's scroll viewer)
+                var parentScrollViewer = FindParent<ScrollViewer>(scrollViewer);
+                if (parentScrollViewer != null)
+                {
+                    // Only forward if we're at the boundary
+                    bool atTop = scrollViewer.VerticalOffset == 0 && e.Delta > 0;
+                    bool atBottom = scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight && e.Delta < 0;
+                    
+                    if (atTop || atBottom || scrollViewer.ScrollableHeight == 0)
+                    {
+                        e.Handled = true;
+                        var routedEvent = new System.Windows.Input.MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                        {
+                            RoutedEvent = UIElement.MouseWheelEvent,
+                            Source = sender
+                        };
+                        parentScrollViewer.RaiseEvent(routedEvent);
+                    }
+                }
+            }
+        }
+
+        private T FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parentObject = System.Windows.Media.VisualTreeHelper.GetParent(child);
+
+            if (parentObject == null) return null;
+
+            T parent = parentObject as T;
+            return parent ?? FindParent<T>(parentObject);
         }
 
         #endregion

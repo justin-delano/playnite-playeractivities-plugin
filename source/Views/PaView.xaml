@@ -240,7 +240,9 @@
                                                               MaxHeight="100"
                                                               VerticalAlignment="Top" HorizontalAlignment="Center" />
 
-                                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" MaxHeight="500">
+                                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" MaxHeight="500"
+                                                      PanningMode="None"
+                                                      PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
                                             <ItemsControl Name="PART_ItemsControl" ItemsSource="{Binding ActivitiesOrdered}" >
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>

@@ -59,13 +59,25 @@ namespace PlayerActivities.Clients
 
             if (!EnsureAuthenticated())
             {
+                Logger.Warn($"{ClientName} - User not authenticated");
                 return friends;
             }
 
             try
             {
+                Logger.Info($"{ClientName} - Starting to fetch friends data");
+                
                 var currentUser = StoreApi.CurrentAccountInfos;
+                if (currentUser == null)
+                {
+                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null");
+                    return friends;
+                }
+                
+                Logger.Info($"{ClientName} - Current user: {currentUser.Pseudo} (ID: {currentUser.UserId})");
+                
                 var currentGamesInfos = StoreApi.CurrentGamesInfos;
+                Logger.Info($"{ClientName} - Current user has {currentGamesInfos?.Count() ?? 0} games");
 
                 var playerFriendsUs = BuildPlayerFriend(currentUser, currentGamesInfos);
                 friends.Add(playerFriendsUs);
@@ -73,8 +85,11 @@ namespace PlayerActivities.Clients
                 var currentFriendsInfos = StoreApi.CurrentFriendsInfos;
                 if (currentFriendsInfos == null)
                 {
+                    Logger.Warn($"{ClientName} - CurrentFriendsInfos is null, no friends data available");
                     return friends;
                 }
+                
+                Logger.Info($"{ClientName} - Found {currentFriendsInfos.Count} friends");
 
                 PluginDatabase.FriendsDataLoading.FriendCount = currentFriendsInfos.Count;
 
@@ -83,18 +98,25 @@ namespace PlayerActivities.Clients
                 {
                     if (PluginDatabase.FriendsDataIsCanceled)
                     {
+                        Logger.Info($"{ClientName} - Friends data fetch canceled");
                         break;
                     }
 
                     PluginDatabase.FriendsDataLoading.FriendName = friend.Pseudo;
+                    Logger.Info($"{ClientName} - Fetching data for friend: {friend.Pseudo}");
 
                     var playerFriend = BuildPlayerFriend(friend);
+                    Logger.Info($"{ClientName} - Friend {friend.Pseudo} has {playerFriend.Games.Count} games, {playerFriend.Stats.Achievements} achievements");
+                    
                     PluginDatabase.FriendsDataLoading.ActualCount++;
                     friends.Add(playerFriend);
                 }
+                
+                Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user)");
             }
             catch (Exception ex)
             {
+                Logger.Error(ex, $"{ClientName} - Error fetching friends data");
                 Common.LogError(ex, false, true, PluginDatabase.PluginName);
             }
 
@@ -147,35 +169,48 @@ namespace PlayerActivities.Clients
         /// </returns>
         protected PlayerFriend BuildPlayerFriend(AccountInfos account, IEnumerable<AccountGameInfos> games = null)
         {
-            games = games ?? StoreApi.GetAccountGamesInfos(account);
-
-            return new PlayerFriend
+            try
             {
-                ClientName = ClientName,
-                FriendId = account.UserId,
-                ClientId = account.ClientId,
-                FriendPseudo = account.Pseudo,
-                FriendsAvatar = account.Avatar,
-                FriendsLink = account.Link,
-                IsUser = account.IsCurrent,
-                AcceptedAt = account.DateAdded,
-                Stats = new PlayerStats
+                games = games ?? StoreApi.GetAccountGamesInfos(account);
+                
+                if (games == null)
                 {
-                    GamesOwned = games?.Count() ?? 0,
-                    Achievements = games?.Sum(x => x.AchievementsUnlocked) ?? 0,
-                    Playtime = games?.Sum(x => x.Playtime) ?? 0
-                },
-                Games = games?.Select(x => new PlayerGame
+                    Logger.Warn($"{ClientName} - No games data available for {account.Pseudo}");
+                }
+
+                return new PlayerFriend
                 {
-                    Achievements = x.AchievementsUnlocked,
-                    Playtime = x.Playtime,
-                    Id = x.Id,
-                    IsCommun = x.IsCommun,
-                    Link = x.Link,
-                    Name = x.Name
-                }).ToList() ?? new List<PlayerGame>(),
-                LastUpdate = DateTime.Now
-            };
+                    ClientName = ClientName,
+                    FriendId = account.UserId,
+                    ClientId = account.ClientId,
+                    FriendPseudo = account.Pseudo,
+                    FriendsAvatar = account.Avatar,
+                    FriendsLink = account.Link,
+                    IsUser = account.IsCurrent,
+                    AcceptedAt = account.DateAdded,
+                    Stats = new PlayerStats
+                    {
+                        GamesOwned = games?.Count() ?? 0,
+                        Achievements = games?.Sum(x => x.AchievementsUnlocked) ?? 0,
+                        Playtime = games?.Sum(x => x.Playtime) ?? 0
+                    },
+                    Games = games?.Select(x => new PlayerGame
+                    {
+                        Achievements = x.AchievementsUnlocked,
+                        Playtime = x.Playtime,
+                        Id = x.Id,
+                        IsCommun = x.IsCommun,
+                        Link = x.Link,
+                        Name = x.Name
+                    }).ToList() ?? new List<PlayerGame>(),
+                    LastUpdate = DateTime.Now
+                };
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"{ClientName} - Error building PlayerFriend for {account.Pseudo}");
+                throw;
+            }
         }
 
         /// <summary>
