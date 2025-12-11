@@ -1384,7 +1384,74 @@ namespace CommonPluginsStores.Steam
                 if (gamesListTemplate == null)
                 {
                     Logger.Warn($"GetAccountGamesInfosByWeb - No games list template found for {accountInfos.Pseudo} ({accountInfos.UserId})");
-                    Logger.Warn($"GetAccountGamesInfosByWeb - This could mean: 1) Profile is private, 2) Game details are private, 3) Cookies expired, 4) Not authenticated");
+                    
+                    // Try to find any template tags to understand structure
+                    var allTemplates = htmlDocument.QuerySelectorAll("template");
+                    Logger.Info($"GetAccountGamesInfosByWeb - Found {allTemplates.Length} template elements in page");
+                    foreach (var template in allTemplates)
+                    {
+                        var id = template.GetAttribute("id");
+                        var dataAttrs = template.Attributes.Where(a => a.Name.StartsWith("data-")).Select(a => a.Name).ToList();
+                        Logger.Info($"GetAccountGamesInfosByWeb - Template: id='{id}', data-attributes=[{string.Join(", ", dataAttrs)}]");
+                    }
+                    
+                    // Try alternative selector for new Steam layout
+                    var scriptTags = htmlDocument.QuerySelectorAll("script");
+                    Logger.Info($"GetAccountGamesInfosByWeb - Found {scriptTags.Length} script tags, checking for rgGames data");
+                    foreach (var script in scriptTags)
+                    {
+                        var content = script.TextContent;
+                        if (content != null && (content.Contains("rgGames") || content.Contains("\"rgGames\"")))
+                        {
+                            Logger.Info($"GetAccountGamesInfosByWeb - Found rgGames in script tag (length: {content.Length})");
+                            // Try to extract rgGames JSON from script
+                            var match = System.Text.RegularExpressions.Regex.Match(content, @"var\s+rgGames\s*=\s*(\[.*?\]);", System.Text.RegularExpressions.RegexOptions.Singleline);
+                            if (match.Success)
+                            {
+                                Logger.Info($"GetAccountGamesInfosByWeb - Extracted rgGames JSON from script (length: {match.Groups[1].Value.Length})");
+                                // Parse the games from the script tag
+                                try
+                                {
+                                    string gamesJson = match.Groups[1].Value;
+                                    if (Serialization.TryFromJson<List<SteamGame>>(gamesJson, out List<SteamGame> games))
+                                    {
+                                        Logger.Info($"GetAccountGamesInfosByWeb - Successfully parsed {games.Count} games from script tag");
+                                        
+                                        games?.ForEach(x =>
+                                        {
+                                            ObservableCollection<GameAchievement> gameAchievements = new ObservableCollection<GameAchievement>();
+                                            if (x.PlaytimeForever > 0)
+                                            {
+                                                gameAchievements = GetAchievements(x.Appid.ToString(), accountInfos);
+                                            }
+
+                                            AccountGameInfos gameInfos = new AccountGameInfos
+                                            {
+                                                Id = x.Appid.ToString(),
+                                                Name = x.Name,
+                                                Link = string.Format(UrlSteamGame, x.Appid),
+                                                IsCommun = !accountInfos.IsCurrent && CurrentGamesInfos.FirstOrDefault(y => y.Id == x.Appid.ToString()) != null,
+                                                Achievements = gameAchievements,
+                                                Playtime = x.PlaytimeForever
+                                            };
+
+                                            accountGameInfos.Add(gameInfos);
+                                        });
+                                        
+                                        Logger.Info($"GetAccountGamesInfosByWeb - Successfully retrieved {accountGameInfos.Count} games from script tag for {accountInfos.Pseudo}");
+                                        return accountGameInfos;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error(ex, $"GetAccountGamesInfosByWeb - Failed to parse games from script tag");
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    
+                    Logger.Warn($"GetAccountGamesInfosByWeb - This could mean: 1) Profile is private, 2) Game details are private, 3) Cookies expired, 4) Not authenticated, 5) Steam changed their page structure");
                     
                     // Check for privacy message
                     var privacyMessage = htmlDocument.QuerySelector(".profile_private_info");
