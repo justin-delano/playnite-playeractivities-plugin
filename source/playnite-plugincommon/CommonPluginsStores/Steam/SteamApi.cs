@@ -406,18 +406,32 @@ namespace CommonPluginsStores.Steam
 		/// <returns>Collection of AccountGameInfos for each game owned by the user</returns>
 		public override ObservableCollection<AccountGameInfos> GetAccountGamesInfos(AccountInfos accountInfos)
         {
+            Logger.Info($"GetAccountGamesInfos called for user: {accountInfos?.Pseudo} (ID: {accountInfos?.UserId}, IsCurrent: {accountInfos?.IsCurrent})");
+            
             try
             {
-                if (CurrentAccountInfos != null && CurrentAccountInfos.IsCurrent)
+                if (CurrentAccountInfos == null)
                 {
-                    ObservableCollection<AccountGameInfos> accountGameInfos = StoreSettings.UseAuth || CurrentAccountInfos.IsPrivate || !StoreSettings.UseApi || CurrentAccountInfos.ApiKey.IsNullOrEmpty()
-                        ? GetAccountGamesInfosByWeb(accountInfos)
-                        : GetAccountGamesInfosByApi(accountInfos);
-                    return accountGameInfos;
+                    Logger.Warn($"GetAccountGamesInfos - CurrentAccountInfos is null, user not authenticated");
+                    return null;
                 }
+
+                Logger.Info($"GetAccountGamesInfos - CurrentUser: {CurrentAccountInfos.Pseudo} (ID: {CurrentAccountInfos.UserId}, IsPrivate: {CurrentAccountInfos.IsPrivate})");
+                Logger.Info($"GetAccountGamesInfos - Settings: UseAuth={StoreSettings.UseAuth}, UseApi={StoreSettings.UseApi}, HasApiKey={!CurrentAccountInfos.ApiKey.IsNullOrEmpty()}");
+                
+                bool useWeb = StoreSettings.UseAuth || CurrentAccountInfos.IsPrivate || !StoreSettings.UseApi || CurrentAccountInfos.ApiKey.IsNullOrEmpty();
+                Logger.Info($"GetAccountGamesInfos - Using {(useWeb ? "Web" : "API")} method to fetch games");
+                
+                ObservableCollection<AccountGameInfos> accountGameInfos = useWeb
+                    ? GetAccountGamesInfosByWeb(accountInfos)
+                    : GetAccountGamesInfosByApi(accountInfos);
+                
+                Logger.Info($"GetAccountGamesInfos - Retrieved {accountGameInfos?.Count ?? 0} games for {accountInfos?.Pseudo}");
+                return accountGameInfos;
             }
             catch (Exception ex)
             {
+                Logger.Error(ex, $"GetAccountGamesInfos - Failed for user {accountInfos?.Pseudo}");
                 Common.LogError(ex, false, true, PluginName);
             }
 
@@ -1146,33 +1160,59 @@ namespace CommonPluginsStores.Steam
 
         private ObservableCollection<AccountGameInfos> GetAccountGamesInfosByApi(AccountInfos accountInfos)
         {
+            Logger.Info($"GetAccountGamesInfosByApi - Fetching games for {accountInfos.Pseudo} (ID: {accountInfos.UserId})");
+            
             ObservableCollection<AccountGameInfos> accountGameInfos = null;
-            if (!CurrentAccountInfos.ApiKey.IsNullOrEmpty() && ulong.TryParse(accountInfos.UserId, out ulong steamId))
+            
+            if (CurrentAccountInfos.ApiKey.IsNullOrEmpty())
             {
-                accountGameInfos = new ObservableCollection<AccountGameInfos>();
-                List<SteamOwnedGame> steamOwnedGame = SteamKit.GetOwnedGames(CurrentAccountInfos.ApiKey, steamId);
-                steamOwnedGame?.ForEach(x =>
-                {
-                    ObservableCollection<GameAchievement> gameAchievements = new ObservableCollection<GameAchievement>();
-                    if (x.PlaytimeForever > 0)
-                    {
-                        // TODO "error": "Profile is not public"
-                        gameAchievements = GetAchievements(x.Appid.ToString(), accountInfos);
-                    }
-
-                    AccountGameInfos gameInfos = new AccountGameInfos
-                    {
-                        Id = x.Appid.ToString(),
-                        Name = x.Name,
-                        Link = string.Format(UrlSteamGame, x.Appid),
-                        IsCommun = !accountInfos.IsCurrent && CurrentGamesInfos.FirstOrDefault(y => y.Id == x.Appid.ToString()) != null,
-                        Achievements = gameAchievements,
-                        Playtime = x.PlaytimeForever
-                    };
-
-                    accountGameInfos.Add(gameInfos);
-                });
+                Logger.Warn($"GetAccountGamesInfosByApi - No API key available");
+                return null;
             }
+            
+            if (!ulong.TryParse(accountInfos.UserId, out ulong steamId))
+            {
+                Logger.Warn($"GetAccountGamesInfosByApi - Invalid Steam ID: {accountInfos.UserId}");
+                return null;
+            }
+            
+            accountGameInfos = new ObservableCollection<AccountGameInfos>();
+            Logger.Info($"GetAccountGamesInfosByApi - Calling Steam API with key and Steam ID: {steamId}");
+            
+            List<SteamOwnedGame> steamOwnedGame = SteamKit.GetOwnedGames(CurrentAccountInfos.ApiKey, steamId);
+            
+            if (steamOwnedGame == null)
+            {
+                Logger.Warn($"GetAccountGamesInfosByApi - Steam API returned null (profile may be private or API error)");
+            }
+            else
+            {
+                Logger.Info($"GetAccountGamesInfosByApi - Steam API returned {steamOwnedGame.Count} games");
+            }
+            
+            steamOwnedGame?.ForEach(x =>
+            {
+                ObservableCollection<GameAchievement> gameAchievements = new ObservableCollection<GameAchievement>();
+                if (x.PlaytimeForever > 0)
+                {
+                    // TODO "error": "Profile is not public"
+                    gameAchievements = GetAchievements(x.Appid.ToString(), accountInfos);
+                }
+
+                AccountGameInfos gameInfos = new AccountGameInfos
+                {
+                    Id = x.Appid.ToString(),
+                    Name = x.Name,
+                    Link = string.Format(UrlSteamGame, x.Appid),
+                    IsCommun = !accountInfos.IsCurrent && CurrentGamesInfos.FirstOrDefault(y => y.Id == x.Appid.ToString()) != null,
+                    Achievements = gameAchievements,
+                    Playtime = x.PlaytimeForever
+                };
+
+                accountGameInfos.Add(gameInfos);
+            });
+            
+            Logger.Info($"GetAccountGamesInfosByApi - Successfully retrieved {accountGameInfos.Count} games for {accountInfos.Pseudo}");
             return accountGameInfos;
         }
 
@@ -1279,25 +1319,67 @@ namespace CommonPluginsStores.Steam
 
         private ObservableCollection<AccountGameInfos> GetAccountGamesInfosByWeb(AccountInfos accountInfos)
         {
+            Logger.Info($"GetAccountGamesInfosByWeb - Fetching games for {accountInfos.Pseudo} (ID: {accountInfos.UserId})");
+            
             try
             {
                 ObservableCollection<AccountGameInfos> accountGameInfos = new ObservableCollection<AccountGameInfos>();
                 List<HttpCookie> cookies = GetStoredCookies();
+                
+                Logger.Info($"GetAccountGamesInfosByWeb - Retrieved {cookies?.Count ?? 0} cookies");
+                if (cookies != null && cookies.Any())
+                {
+                    var expiredCount = cookies.Count(c => c.Expires != null && (DateTime)c.Expires <= DateTime.Now);
+                    if (expiredCount > 0)
+                    {
+                        Logger.Warn($"GetAccountGamesInfosByWeb - {expiredCount} of {cookies.Count} cookies are expired");
+                    }
+                }
+                
                 string url = string.Format(UrlProfileGamesById, accountInfos.UserId);
+                Logger.Info($"GetAccountGamesInfosByWeb - Requesting URL: {url}");
+                
                 string response = Web.DownloadStringData(url, cookies).GetAwaiter().GetResult();
+                Logger.Info($"GetAccountGamesInfosByWeb - Response length: {response?.Length ?? 0} characters");
+
+                // Check if redirected to login
+                if (response.Contains("steamcommunity.com/login") || response.Contains("g_steamID = false"))
+                {
+                    Logger.Warn($"GetAccountGamesInfosByWeb - Response indicates not logged in or session expired");
+                }
 
                 IHtmlDocument htmlDocument = new HtmlParser().Parse(response);
                 IElement gamesListTemplate = htmlDocument.QuerySelector($"template#gameslist_config[data-profile-gameslist]");
 
                 if (gamesListTemplate == null)
                 {
-                    Logger.Warn($"No games list found for {accountInfos.Pseudo} ({accountInfos.UserId})");
+                    Logger.Warn($"GetAccountGamesInfosByWeb - No games list template found for {accountInfos.Pseudo} ({accountInfos.UserId})");
+                    Logger.Warn($"GetAccountGamesInfosByWeb - This could mean: 1) Profile is private, 2) Game details are private, 3) Cookies expired, 4) Not authenticated");
+                    
+                    // Check for privacy message
+                    var privacyMessage = htmlDocument.QuerySelector(".profile_private_info");
+                    if (privacyMessage != null)
+                    {
+                        Logger.Warn($"GetAccountGamesInfosByWeb - Profile appears to be private");
+                    }
+                    
                     return accountGameInfos;
                 }
 
                 string json = gamesListTemplate.GetAttribute("data-profile-gameslist").HtmlDecode();
+                Logger.Info($"GetAccountGamesInfosByWeb - Found games list JSON, length: {json?.Length ?? 0}");
 
                 _ = Serialization.TryFromJson<SteamProfileGames>(json, out SteamProfileGames steamProfileGames);
+                
+                if (steamProfileGames?.RgGames == null)
+                {
+                    Logger.Warn($"GetAccountGamesInfosByWeb - Failed to parse games JSON for {accountInfos.Pseudo}");
+                }
+                else
+                {
+                    Logger.Info($"GetAccountGamesInfosByWeb - Parsed {steamProfileGames.RgGames.Count} games from JSON");
+                }
+                
                 steamProfileGames?.RgGames?.ForEach(x =>
                 {
                     ObservableCollection<GameAchievement> gameAchievements = new ObservableCollection<GameAchievement>();
@@ -1319,12 +1401,20 @@ namespace CommonPluginsStores.Steam
                     accountGameInfos.Add(gameInfos);
                 });
 
+                Logger.Info($"GetAccountGamesInfosByWeb - Successfully retrieved {accountGameInfos.Count} games for {accountInfos.Pseudo}");
                 return accountGameInfos;
             }
             catch (WebException ex)
             {
+                Logger.Error(ex, $"GetAccountGamesInfosByWeb - WebException for {accountInfos.Pseudo}: {ex.Message}");
                 Common.LogError(ex, false, true, PluginName);
                 IsUserLoggedIn = false;
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"GetAccountGamesInfosByWeb - Exception for {accountInfos.Pseudo}: {ex.Message}");
+                Common.LogError(ex, false, true, PluginName);
                 return null;
             }
         }
