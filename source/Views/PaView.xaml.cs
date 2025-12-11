@@ -34,6 +34,9 @@ namespace PlayerActivities.Views
         internal static PaViewData ControlDataContext { get; set; } = new PaViewData();
 
         private List<string> SearchSources { get; set; } = new List<string>();
+        
+        // Store all activities data once for search functionality (loaded once, filtered in memory)
+        private ObservableCollection<ActivityListGrouped> AllActivitiesData { get; set; } = new ObservableCollection<ActivityListGrouped>();
 
         private bool TimeLineFilter(object item)
         {
@@ -44,7 +47,9 @@ namespace PlayerActivities.Views
 
             ActivityListGrouped el = item as ActivityListGrouped;
 
-            bool txtFilter = el.GameContext.Name.Contains(TextboxSearch.Text, StringComparison.InvariantCultureIgnoreCase);
+            // Text search - use simple name matching on current item (fast)
+            bool txtFilter = string.IsNullOrEmpty(TextboxSearch.Text) || 
+                           el.GameContext.Name.Contains(TextboxSearch.Text, StringComparison.InvariantCultureIgnoreCase);
 
             bool sourceFilter = true;
             if (SearchSources.Count > 0)
@@ -96,7 +101,6 @@ namespace PlayerActivities.Views
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast7Days"), Days = 7, IsCustom = false });
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast30Days"), Days = 30, IsCustom = false });
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast90Days"), Days = 90, IsCustom = false });
-            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterAllTime"), Days = null, IsCustom = false });
 
             // Set default filter based on settings (default to 7 days)
             int defaultDays = PluginDatabase.PluginSettings.Settings.DateFilterDays;
@@ -117,6 +121,10 @@ namespace PlayerActivities.Views
         {
             _ = Task.Run(() =>
             {
+                // Load all activities once (cached at 7-day level in database)
+                AllActivitiesData = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                
+                // Apply date filter in memory for display (fast, no DB hit)
                 DateTime? startDate = null;
                 DateTime? endDate = null;
 
@@ -126,7 +134,33 @@ namespace PlayerActivities.Views
                     endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
                 }
 
-                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);
+                // Filter in memory instead of loading twice
+                if (startDate.HasValue && endDate.HasValue)
+                {
+                    var filteredData = new ObservableCollection<ActivityListGrouped>();
+                    foreach (var group in AllActivitiesData)
+                    {
+                        // Filter activities within date range
+                        var filteredActivities = group.Activities
+                            .Where(a => a.DateActivity >= startDate.Value && a.DateActivity <= endDate.Value)
+                            .ToList();
+                        
+                        if (filteredActivities.Any())
+                        {
+                            filteredData.Add(new ActivityListGrouped
+                            {
+                                GameContext = group.GameContext,
+                                Activities = filteredActivities.ToObservable(),
+                                ActivitiesOrdered = filteredActivities.OrderByDescending(a => a.DateActivity).ToObservable()
+                            });
+                        }
+                    }
+                    ControlDataContext.ItemsSource = filteredData;
+                }
+                else
+                {
+                    ControlDataContext.ItemsSource = AllActivitiesData;
+                }
 
                 IsDataFinished = true;
                 IsFinish();
