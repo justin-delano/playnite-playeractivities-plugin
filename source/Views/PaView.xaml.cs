@@ -93,6 +93,24 @@ namespace PlayerActivities.Views
 
             // Initialize date filter options
             InitializeDateFilterOptions();
+            
+            // Initialize RefreshGameDataCommand
+            RefreshGameDataCommand = new RelayCommand<Game>((game) =>
+            {
+                if (game == null)
+                {
+                    return;
+                }
+
+                PluginDatabase.InitializePluginData(true, game.Id);
+                
+                // Invalidate cache and reload all data
+                PluginDatabase.InvalidateCache();
+                PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                
+                // Refresh view to apply current filter
+                _collectionView?.Refresh();
+            });
 
             GetData();
             GetFriends();
@@ -391,25 +409,7 @@ namespace PlayerActivities.Views
         public RelayCommand<Game> ShowGameInLibraryCommand { get; } = new RelayCommand<Game>((game)
             => Commands.GoToGame.Execute(game.Id));
 
-        public RelayCommand<Game> RefreshGameDataCommand { get; } = new RelayCommand<Game>((game) =>
-        {
-            if (game == null)
-            {
-                return;
-            }
-
-            PluginDatabase.InitializePluginData(true, game.Id);
-            
-            // Invalidate cache and reload all data
-            PluginDatabase.InvalidateCache();
-            PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
-            
-            // Refresh view to apply current filter
-            if (PaView.PART_LbTimeLine?.ItemsSource != null)
-            {
-                CollectionViewSource.GetDefaultView(PaView.PART_LbTimeLine.ItemsSource).Refresh();
-            }
-        });
+        public RelayCommand<Game> RefreshGameDataCommand { get; set; }
 
         public RelayCommand<Game> ShowGameSuccessStoryCommand { get; } = new RelayCommand<Game>((game) 
             => SuccessStoryPlugin.SuccessStoryView(game));
