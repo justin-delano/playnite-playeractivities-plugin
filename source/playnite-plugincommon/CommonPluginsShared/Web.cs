@@ -484,6 +484,18 @@ namespace CommonPluginsShared
                 cookieContainer = CreateCookiesContainer(cookies);
                 handler.CookieContainer = cookieContainer;
                 Logger.Info($"DownloadStringData() - Depth {redirectDepth}: CookieContainer created with {cookieContainer.Count} cookies");
+                
+                // Log critical Steam authentication cookies for debugging
+                var criticalCookies = new[] { "sessionid", "steamLoginSecure", "steamLogin", "steamMachineAuth" };
+                var foundCritical = cookies.Where(c => criticalCookies.Any(cc => c.Name.Contains(cc, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (foundCritical.Any())
+                {
+                    Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Found {foundCritical.Count} critical auth cookies: {string.Join(", ", foundCritical.Select(c => $"{c.Name}={c.Domain}"))}");
+                }
+                else
+                {
+                    Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: No critical Steam auth cookies found (sessionid, steamLoginSecure, steamLogin, steamMachineAuth)");
+                }
             }
 
             var request = new HttpRequestMessage()
