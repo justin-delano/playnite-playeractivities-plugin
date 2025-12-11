@@ -111,6 +111,9 @@ namespace PlayerActivities.Views
                 // Refresh view to apply current filter
                 _collectionView?.Refresh();
             });
+            
+            // Also assign to ControlDataContext
+            ControlDataContext.RefreshGameDataCommand = RefreshGameDataCommand;
 
             GetData();
             GetFriends();
