@@ -35,8 +35,8 @@ namespace PlayerActivities.Views
 
         private List<string> SearchSources { get; set; } = new List<string>();
         
-        // Store all activities data once for search functionality (loaded once, filtered in memory)
-        private ObservableCollection<ActivityListGrouped> AllActivitiesData { get; set; } = new ObservableCollection<ActivityListGrouped>();
+        // Cache CollectionView reference for better performance
+        private CollectionView _collectionView;
 
         private bool TimeLineFilter(object item)
         {
@@ -139,11 +139,9 @@ namespace PlayerActivities.Views
             _ = Task.Run(() =>
             {
                 // Load all activities once (cached at 7-day level in database)
-                AllActivitiesData = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
-                
-                // Always show all data - date filtering will be done in TimeLineFilter
+                // Always load all data - date filtering will be done in TimeLineFilter
                 // This allows search to work across all activities
-                ControlDataContext.ItemsSource = AllActivitiesData;
+                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
 
                 IsDataFinished = true;
                 IsFinish();
@@ -179,8 +177,8 @@ namespace PlayerActivities.Views
 
                     _ = (Dispatcher?.BeginInvoke(DispatcherPriority.Loaded, new ThreadStart(delegate
                     {
-                        CollectionView view = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
-                        view.Filter = TimeLineFilter;
+                        _collectionView = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
+                        _collectionView.Filter = TimeLineFilter;
                     })));
                 });
             }
@@ -192,7 +190,7 @@ namespace PlayerActivities.Views
 
         private void TextboxSearch_TextChanged(object sender, TextChangedEventArgs e)
         {
-            CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
+            _collectionView?.Refresh();
         }
 
         private void ChkSource_Checked(object sender, RoutedEventArgs e)
@@ -223,8 +221,7 @@ namespace PlayerActivities.Views
                 FilterSource.Text = string.Join(", ", SearchSources);
             }
 
-            CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
-
+            _collectionView?.Refresh();
         }
 
         private void CbDateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -235,10 +232,7 @@ namespace PlayerActivities.Views
             }
 
             // Refresh the view to apply new date filter
-            if (PART_LbTimeLine?.ItemsSource != null)
-            {
-                CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
-            }
+            _collectionView?.Refresh();
         }
 
         private void ScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
