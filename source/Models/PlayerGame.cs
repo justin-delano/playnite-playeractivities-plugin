@@ -1,4 +1,7 @@
-﻿namespace PlayerActivities.Models
+﻿using System;
+using System.Collections.Generic;
+
+namespace PlayerActivities.Models
 {
     /// <summary>
     /// Represents a game associated with a player or a friend.
@@ -35,5 +38,11 @@
         /// Total playtime in the game, typically measured in minutes.
         /// </summary>
         public int Playtime { get; set; }
+
+        /// <summary>
+        /// List of individual achievement unlocks with timestamps.
+        /// Only populated when friend achievement timeline data is enabled.
+        /// </summary>
+        public List<FriendAchievementUnlock> AchievementUnlocks { get; set; } = new List<FriendAchievementUnlock>();
     }
 }
