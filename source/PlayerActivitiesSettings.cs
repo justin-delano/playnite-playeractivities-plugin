@@ -33,9 +33,7 @@ namespace PlayerActivities
 
 
         public bool EnableDateFilter { get; set; } = true;
-        public int DateFilterDays { get; set; } = 30;
-        public DateTime? DateFilterStartDate { get; set; }
-        public DateTime? DateFilterEndDate { get; set; }
+        public int DateFilterDays { get; set; } = 7;
 
 
         public StoreSettings SteamStoreSettings { get; set; } = new StoreSettings { ForceAuth = true, UseAuth = true, UseApi = false };

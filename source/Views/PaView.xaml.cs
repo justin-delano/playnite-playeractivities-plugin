@@ -95,25 +95,12 @@ namespace PlayerActivities.Views
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast7Days"), Days = 7, IsCustom = false });
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast30Days"), Days = 30, IsCustom = false });
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast90Days"), Days = 90, IsCustom = false });
-            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast180Days"), Days = 180, IsCustom = false });
-            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast365Days"), Days = 365, IsCustom = false });
             ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterAllTime"), Days = null, IsCustom = false });
-            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterCustom"), Days = null, IsCustom = true });
 
-            // Set default filter based on settings
+            // Set default filter based on settings (default to 7 days)
             int defaultDays = PluginDatabase.PluginSettings.Settings.DateFilterDays;
             ControlDataContext.SelectedDateFilter = ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == defaultDays) 
-                ?? ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == 30);
-
-            // Initialize custom date range if saved in settings
-            if (PluginDatabase.PluginSettings.Settings.DateFilterStartDate.HasValue)
-            {
-                ControlDataContext.CustomStartDate = PluginDatabase.PluginSettings.Settings.DateFilterStartDate;
-            }
-            if (PluginDatabase.PluginSettings.Settings.DateFilterEndDate.HasValue)
-            {
-                ControlDataContext.CustomEndDate = PluginDatabase.PluginSettings.Settings.DateFilterEndDate;
-            }
+                ?? ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == 7);
         }
 
         private void Database_ItemUpdated(object sender, ItemUpdatedEventArgs<PlayerActivitiesData> e)
@@ -134,16 +121,8 @@ namespace PlayerActivities.Views
 
                 if (PluginDatabase.PluginSettings.Settings.EnableDateFilter && ControlDataContext.SelectedDateFilter != null)
                 {
-                    if (ControlDataContext.SelectedDateFilter.IsCustom)
-                    {
-                        startDate = ControlDataContext.CustomStartDate;
-                        endDate = ControlDataContext.CustomEndDate;
-                    }
-                    else
-                    {
-                        startDate = ControlDataContext.SelectedDateFilter.GetStartDate();
-                        endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
-                    }
+                    startDate = ControlDataContext.SelectedDateFilter.GetStartDate();
+                    endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
                 }
 
                 ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);
@@ -237,33 +216,8 @@ namespace PlayerActivities.Views
                 return;
             }
 
-            // Show/hide custom date pickers
-            if (ControlDataContext.SelectedDateFilter.IsCustom)
-            {
-                LblStartDate.Visibility = Visibility.Visible;
-                DpStartDate.Visibility = Visibility.Visible;
-                LblEndDate.Visibility = Visibility.Visible;
-                DpEndDate.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                LblStartDate.Visibility = Visibility.Collapsed;
-                DpStartDate.Visibility = Visibility.Collapsed;
-                LblEndDate.Visibility = Visibility.Collapsed;
-                DpEndDate.Visibility = Visibility.Collapsed;
-            }
-
             // Reload data with new date filter
             GetData();
-        }
-
-        private void DatePicker_SelectedDateChanged(object sender, SelectionChangedEventArgs e)
-        {
-            // Reload data when custom date range changes
-            if (ControlDataContext.SelectedDateFilter?.IsCustom == true)
-            {
-                GetData();
-            }
         }
 
         #endregion
@@ -373,12 +327,6 @@ namespace PlayerActivities.Views
         private DateFilterOption _selectedDateFilter;
         public DateFilterOption SelectedDateFilter { get => _selectedDateFilter; set => SetValue(ref _selectedDateFilter, value); }
 
-        private DateTime? _customStartDate;
-        public DateTime? CustomStartDate { get => _customStartDate; set => SetValue(ref _customStartDate, value); }
-
-        private DateTime? _customEndDate;
-        public DateTime? CustomEndDate { get => _customEndDate; set => SetValue(ref _customEndDate, value); }
-
 
         #region Menus
 
@@ -405,16 +353,8 @@ namespace PlayerActivities.Views
 
             if (PluginDatabase.PluginSettings.Settings.EnableDateFilter && PaView.ControlDataContext.SelectedDateFilter != null)
             {
-                if (PaView.ControlDataContext.SelectedDateFilter.IsCustom)
-                {
-                    startDate = PaView.ControlDataContext.CustomStartDate;
-                    endDate = PaView.ControlDataContext.CustomEndDate;
-                }
-                else
-                {
-                    startDate = PaView.ControlDataContext.SelectedDateFilter.GetStartDate();
-                    endDate = PaView.ControlDataContext.SelectedDateFilter.GetEndDate();
-                }
+                startDate = PaView.ControlDataContext.SelectedDateFilter.GetStartDate();
+                endDate = PaView.ControlDataContext.SelectedDateFilter.GetEndDate();
             }
 
             PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);

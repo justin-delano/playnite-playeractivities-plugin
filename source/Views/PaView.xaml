@@ -179,14 +179,6 @@
                                 <ColumnDefinition Width="auto" />
                                 <ColumnDefinition Width="6" />
                                 <ColumnDefinition Width="200" />
-                                <ColumnDefinition Width="10" />
-                                <ColumnDefinition Width="auto" />
-                                <ColumnDefinition Width="6" />
-                                <ColumnDefinition Width="150" />
-                                <ColumnDefinition Width="10" />
-                                <ColumnDefinition Width="auto" />
-                                <ColumnDefinition Width="6" />
-                                <ColumnDefinition Width="150" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
@@ -196,22 +188,6 @@
                                       SelectedItem="{Binding SelectedDateFilter, Mode=TwoWay}"
                                       DisplayMemberPath="Name"
                                       SelectionChanged="CbDateFilter_SelectionChanged" />
-
-                            <Label Grid.Column="4" Content="{DynamicResource LOCPaDateFilterFrom}" FontSize="16" 
-                                   Name="LblStartDate"
-                                   Visibility="Collapsed" />
-                            <DatePicker Grid.Column="6" Name="DpStartDate" 
-                                        SelectedDate="{Binding CustomStartDate, Mode=TwoWay}"
-                                        SelectedDateChanged="DatePicker_SelectedDateChanged"
-                                        Visibility="Collapsed" />
-
-                            <Label Grid.Column="8" Content="{DynamicResource LOCPaDateFilterTo}" FontSize="16" 
-                                   Name="LblEndDate"
-                                   Visibility="Collapsed" />
-                            <DatePicker Grid.Column="10" Name="DpEndDate" 
-                                        SelectedDate="{Binding CustomEndDate, Mode=TwoWay}"
-                                        SelectedDateChanged="DatePicker_SelectedDateChanged"
-                                        Visibility="Collapsed" />
                         </Grid>
                     </Grid>
                 </Border>

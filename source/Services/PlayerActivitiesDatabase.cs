@@ -99,11 +99,9 @@ namespace PlayerActivities.Services
         }
 
         // Cache for activities data to improve performance
-        private ObservableCollection<ActivityListGrouped> _cachedActivitiesData = null;
-        private DateTime? _cacheStartDate = null;
-        private DateTime? _cacheEndDate = null;
-        private DateTime _cacheTimestamp = DateTime.MinValue;
-        private const int CacheExpirationSeconds = 60; // Cache expires after 60 seconds
+        // Only cache the default 7-day view since that's accessed most frequently
+        private ObservableCollection<ActivityListGrouped> _cached7DaysData = null;
+        private const int CachedDays = 7; // Only cache 7-day view
 
         #endregion
 
@@ -580,16 +578,15 @@ namespace PlayerActivities.Services
         /// </returns>
         public ObservableCollection<ActivityListGrouped> GetActivitiesData(bool grouped = true, DateTime? startDate = null, DateTime? endDate = null)
         {
-            // Check cache validity
-            bool cacheValid = _cachedActivitiesData != null &&
-                              _cacheStartDate == startDate &&
-                              _cacheEndDate == endDate &&
-                              (DateTime.Now - _cacheTimestamp).TotalSeconds < CacheExpirationSeconds;
+            // Check if this is a 7-day request and we have cached data
+            bool is7DayRequest = startDate.HasValue && endDate.HasValue &&
+                                 (endDate.Value - startDate.Value).Days <= CachedDays &&
+                                 startDate.Value.Date == DateTime.Now.AddDays(-CachedDays).Date;
 
-            if (cacheValid)
+            if (is7DayRequest && _cached7DaysData != null)
             {
-                Logger.Info($"Returning cached activities data (age: {(DateTime.Now - _cacheTimestamp).TotalSeconds:F1}s)");
-                return _cachedActivitiesData;
+                Logger.Info($"Returning cached 7-day activities data");
+                return _cached7DaysData;
             }
 
             Logger.Info($"Loading activities data with date filter: {startDate?.ToString("yyyy-MM-dd") ?? "null"} to {endDate?.ToString("yyyy-MM-dd") ?? "null"}");
@@ -688,13 +685,16 @@ namespace PlayerActivities.Services
                     .ToList();
             }
 
-            // Step 6: Update cache
-            _cachedActivitiesData = groupedActivities;
-            _cacheStartDate = startDate;
-            _cacheEndDate = endDate;
-            _cacheTimestamp = DateTime.Now;
-
-            Logger.Info($"Loaded {groupedActivities.Count} activity groups");
+            // Step 6: Update cache only for 7-day requests
+            if (is7DayRequest)
+            {
+                _cached7DaysData = groupedActivities;
+                Logger.Info($"Loaded and cached {groupedActivities.Count} activity groups for 7-day view");
+            }
+            else
+            {
+                Logger.Info($"Loaded {groupedActivities.Count} activity groups (not cached)");
+            }
 
             return groupedActivities;
         }
@@ -704,11 +704,8 @@ namespace PlayerActivities.Services
         /// </summary>
         public void InvalidateCache()
         {
-            _cachedActivitiesData = null;
-            _cacheStartDate = null;
-            _cacheEndDate = null;
-            _cacheTimestamp = DateTime.MinValue;
-            Logger.Info("Activities data cache invalidated");
+            _cached7DaysData = null;
+            Logger.Info("7-day activities data cache invalidated");
         }
 
         #endregion
