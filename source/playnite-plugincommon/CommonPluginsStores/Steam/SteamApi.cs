@@ -1342,10 +1342,40 @@ namespace CommonPluginsStores.Steam
                 string response = Web.DownloadStringData(url, cookies).GetAwaiter().GetResult();
                 Logger.Info($"GetAccountGamesInfosByWeb - Response length: {response?.Length ?? 0} characters");
 
-                // Check if redirected to login
-                if (response.Contains("steamcommunity.com/login") || response.Contains("g_steamID = false"))
+                // Log response analysis for debugging
+                if (response != null)
                 {
-                    Logger.Warn($"GetAccountGamesInfosByWeb - Response indicates not logged in or session expired");
+                    // Check if redirected to login
+                    if (response.Contains("steamcommunity.com/login") || response.Contains("g_steamID = false"))
+                    {
+                        Logger.Warn($"GetAccountGamesInfosByWeb - Response indicates not logged in or session expired");
+                    }
+                    
+                    // Check what page we actually got
+                    if (response.Contains("<title>"))
+                    {
+                        var titleStart = response.IndexOf("<title>") + 7;
+                        var titleEnd = response.IndexOf("</title>", titleStart);
+                        if (titleEnd > titleStart)
+                        {
+                            var title = response.Substring(titleStart, titleEnd - titleStart);
+                            Logger.Info($"GetAccountGamesInfosByWeb - Page title: '{title}'");
+                        }
+                    }
+                    
+                    // Check for common Steam page elements
+                    bool hasGamesTab = response.Contains("rgGames") || response.Contains("data-profile-gameslist");
+                    bool hasLoginForm = response.Contains("login_btn_signin") || response.Contains("responsive_login");
+                    bool hasPrivateProfile = response.Contains("profile_private_info");
+                    
+                    Logger.Info($"GetAccountGamesInfosByWeb - Content analysis: GamesTab={hasGamesTab}, LoginForm={hasLoginForm}, PrivateProfile={hasPrivateProfile}");
+                    
+                    // Log first 500 chars for inspection if it looks like a login page
+                    if (hasLoginForm)
+                    {
+                        string preview = response.Length > 500 ? response.Substring(0, 500) : response;
+                        Logger.Warn($"GetAccountGamesInfosByWeb - Login page detected, first 500 chars:\n{preview}");
+                    }
                 }
 
                 IHtmlDocument htmlDocument = new HtmlParser().Parse(response);

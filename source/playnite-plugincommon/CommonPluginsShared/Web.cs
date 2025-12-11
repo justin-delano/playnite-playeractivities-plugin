@@ -1184,33 +1184,62 @@ namespace CommonPluginsShared
                     if (table != null)
                     {
                         int domainCount = 0;
-                        foreach (var tableEntry in (System.Collections.IEnumerable)table)
+                        
+                        // m_domainTable is a Hashtable where keys are domain strings and values are PathList objects
+                        var tableType = table.GetType();
+                        Logger.Info($"ExtractCookiesFromContainer() - Reflection: Domain table type is {tableType.Name}");
+                        
+                        foreach (System.Collections.DictionaryEntry entry in (System.Collections.IDictionary)table)
                         {
                             domainCount++;
-                            var values = tableEntry.GetType().GetProperty("Value").GetValue(tableEntry, null);
-                            if (values != null)
+                            string domain = entry.Key as string;
+                            Logger.Info($"ExtractCookiesFromContainer() - Reflection: Processing domain '{domain}'");
+                            
+                            // The value is a PathList object containing cookies organized by path
+                            var pathList = entry.Value;
+                            if (pathList != null)
                             {
-                                foreach (var value in (System.Collections.IEnumerable)values)
+                                // PathList has an internal m_list field which is a SortedList<string, CookieCollection>
+                                var list = pathList.GetType().InvokeMember(
+                                    "m_list",
+                                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.Instance,
+                                    null,
+                                    pathList,
+                                    new object[] { });
+                                    
+                                if (list != null)
                                 {
-                                    var cookieCollection = value.GetType().GetProperty("Value").GetValue(value, null) as CookieCollection;
-                                    if (cookieCollection != null)
+                                    // Iterate through the SortedList values (CookieCollection objects)
+                                    var valuesProperty = list.GetType().GetProperty("Values");
+                                    if (valuesProperty != null)
                                     {
-                                        foreach (Cookie cookie in cookieCollection)
+                                        var values = valuesProperty.GetValue(list, null);
+                                        if (values != null)
                                         {
-                                            string cookieKey = $"{cookie.Domain}|{cookie.Path}|{cookie.Name}";
-                                            if (!seenCookies.Contains(cookieKey))
+                                            foreach (var value in (System.Collections.IEnumerable)values)
                                             {
-                                                httpCookies.Add(new HttpCookie
+                                                var cookieCollection = value as CookieCollection;
+                                                if (cookieCollection != null)
                                                 {
-                                                    Name = cookie.Name,
-                                                    Value = cookie.Value,
-                                                    Domain = cookie.Domain,
-                                                    Path = cookie.Path,
-                                                    Secure = cookie.Secure,
-                                                    HttpOnly = cookie.HttpOnly,
-                                                    Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
-                                                });
-                                                seenCookies.Add(cookieKey);
+                                                    foreach (Cookie cookie in cookieCollection)
+                                                    {
+                                                        string cookieKey = $"{cookie.Domain}|{cookie.Path}|{cookie.Name}";
+                                                        if (!seenCookies.Contains(cookieKey))
+                                                        {
+                                                            httpCookies.Add(new HttpCookie
+                                                            {
+                                                                Name = cookie.Name,
+                                                                Value = cookie.Value,
+                                                                Domain = cookie.Domain,
+                                                                Path = cookie.Path,
+                                                                Secure = cookie.Secure,
+                                                                HttpOnly = cookie.HttpOnly,
+                                                                Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
+                                                            });
+                                                            seenCookies.Add(cookieKey);
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1226,7 +1255,7 @@ namespace CommonPluginsShared
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn(ex, $"ExtractCookiesFromContainer() - Reflection fallback failed (have {httpCookies.Count} cookies from known domains)");
+                    Logger.Error(ex, $"ExtractCookiesFromContainer() - Reflection fallback failed (have {httpCookies.Count} cookies from known domains)");
                 }
             }
 
