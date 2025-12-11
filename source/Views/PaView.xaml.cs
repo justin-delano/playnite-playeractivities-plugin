@@ -159,10 +159,11 @@ namespace PlayerActivities.Views
         {
             _ = Task.Run(() =>
             {
-                // Load all activities once (cached at 7-day level in database)
-                // Always load all data - date filtering will be done in TimeLineFilter
-                // This allows search to work across all activities
-                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                // Load only 7-day data initially for faster first load (uses cache)
+                // When user searches, we'll reload all data dynamically
+                DateTime startDate = DateTime.Now.AddDays(-7).Date;
+                DateTime endDate = DateTime.Now.Date;
+                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);
 
                 IsDataFinished = true;
                 IsFinish();
@@ -194,7 +195,8 @@ namespace PlayerActivities.Views
 
                 _ = Task.Run(() =>
                 {
-                    Thread.Sleep(3000);
+                    // Reduced delay from 3000ms to 500ms for faster UI responsiveness
+                    Thread.Sleep(500);
 
                     _ = (Dispatcher?.BeginInvoke(DispatcherPriority.Loaded, new ThreadStart(delegate
                     {
@@ -213,6 +215,13 @@ namespace PlayerActivities.Views
         {
             if (e.Key == Key.Enter)
             {
+                // If user is searching, reload all data to search across all time
+                if (!string.IsNullOrEmpty(TextboxSearch.Text))
+                {
+                    ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                    _collectionView = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
+                    _collectionView.Filter = TimeLineFilter;
+                }
                 _collectionView?.Refresh();
             }
         }
