@@ -127,11 +127,11 @@ namespace PlayerActivities.Clients
                     friends.Add(playerFriend);
                 }
                 
-                // If all friends have no games data, likely an authentication issue
+                // If all friends have no games data, likely a privacy or authentication issue
                 if (failedFriends > 0 && failedFriends == currentFriendsInfos.Count)
                 {
-                    Logger.Error($"{ClientName} - All {failedFriends} friends returned 0 games. Authentication cookies likely expired.");
-                    ShowAuthenticationExpiredNotification();
+                    Logger.Error($"{ClientName} - All {failedFriends} friends returned 0 games.");
+                    ShowPrivacyOrAuthNotification();
                 }
                 
                 Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user)");
@@ -193,11 +193,14 @@ namespace PlayerActivities.Clients
         {
             try
             {
-                games = games ?? StoreApi.GetAccountGamesInfos(account);
-                
                 if (games == null)
                 {
-                    Logger.Warn($"{ClientName} - No games data available for {account.Pseudo}");
+                    games = StoreApi.GetAccountGamesInfos(account);
+                    
+                    if (games == null || !games.Any())
+                    {
+                        Logger.Warn($"{ClientName} - No games data available for {account.Pseudo}. Profile may be private or have restricted game details visibility.");
+                    }
                 }
 
                 return new PlayerFriend
@@ -285,6 +288,42 @@ namespace PlayerActivities.Clients
         #endregion
 
         #region Errors
+
+        /// <summary>
+        /// Shows a notification about privacy settings or expired authentication.
+        /// </summary>
+        private void ShowPrivacyOrAuthNotification()
+        {
+            string message = $"{ClientName} friends data could not be retrieved. This can happen because:\n\n" +
+                           $"1. Your friends have their game details set to PRIVATE in {ClientName}\n" +
+                           $"2. Your authentication has expired\n\n" +
+                           $"To fix:\n" +
+                           $"• Ask friends to set their game details to PUBLIC in {ClientName} privacy settings\n" +
+                           $"• Or try re-authenticating in plugin settings";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-privacy-or-auth",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Info,
+                () =>
+                {
+                    try
+                    {
+                        Plugin plugin = API.Instance.Addons.Plugins.Find(x => x.Id == PlayniteTools.GetPluginId(
+                            ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
+                        if (plugin != null)
+                        {
+                            StoreApi.ResetIsUserLoggedIn();
+                            _ = plugin.OpenSettingsView();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
 
         /// <summary>
         /// Shows a notification error when authentication cookies have expired.
