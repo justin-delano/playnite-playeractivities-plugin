@@ -71,20 +71,44 @@ namespace CommonPluginsShared
                             Encoding.UTF8,
                             WindowsIdentity.GetCurrent().User.Value));
 
-                    bool hasExpired = storedCookies.Any(x => x.Expires != null && (DateTime)x.Expires <= DateTime.Now);
-                    if (hasExpired)
+                    Logger.Info($"CookiesTools - Loaded {storedCookies?.Count ?? 0} cookies for {ClientName}");
+
+                    if (storedCookies != null && storedCookies.Any())
                     {
-                        message = $"Expired cookies for {ClientName}";
-                    }
-                    else
-                    {
-                        return storedCookies;
+                        var expiredCookies = storedCookies.Where(x => x.Expires != null && (DateTime)x.Expires <= DateTime.Now).ToList();
+                        var validCookies = storedCookies.Where(x => x.Expires == null || (DateTime)x.Expires > DateTime.Now).ToList();
+                        
+                        if (expiredCookies.Any())
+                        {
+                            message = $"Expired cookies for {ClientName}: {expiredCookies.Count} expired, {validCookies.Count} still valid";
+                            Logger.Warn(message);
+                            
+                            // Log specific expired cookies for debugging
+                            foreach (var cookie in expiredCookies.Take(5))
+                            {
+                                Logger.Warn($"  Expired cookie: {cookie.Name} (Domain: {cookie.Domain}, Expired: {cookie.Expires})");
+                            }
+                            
+                            // Still return all cookies including expired ones - the caller needs to handle re-authentication
+                            Logger.Warn($"CookiesTools - Returning {storedCookies.Count} cookies (including expired ones). Authentication may fail.");
+                            return storedCookies;
+                        }
+                        else
+                        {
+                            Logger.Info($"CookiesTools - All {storedCookies.Count} cookies are valid");
+                            return storedCookies;
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Common.LogError(ex, false, $"Failed to load saved cookies for {ClientName}");
+                    message = $"Failed to load saved cookies for {ClientName}";
+                    Common.LogError(ex, false, message);
                 }
+            }
+            else
+            {
+                Logger.Warn($"CookiesTools - Cookie file does not exist: {FileCookies}");
             }
 
             Logger.Warn(message);
