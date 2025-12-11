@@ -1,5 +1,6 @@
 ﻿using CommonPluginsStores.Steam;
 using CommonPluginsStores.Steam.Models.SteamKit;
+using CommonPluginsStores.Models;
 using PlayerActivities.Models;
 using Playnite.SDK;
 using System;
@@ -18,6 +19,77 @@ namespace PlayerActivities.Clients
         public SteamFriends() : base("Steam")
         {
             StoreApi = PlayerActivities.SteamApi;
+        }
+
+        /// <summary>
+        /// Overrides the base BuildPlayerFriend to include Steam achievement unlock data.
+        /// </summary>
+        protected override PlayerFriend BuildPlayerFriend(AccountInfos account, IEnumerable<AccountGameInfos> games = null)
+        {
+            var playerFriend = base.BuildPlayerFriend(account, games);
+
+            // TODO: Add setting to control this behavior (very slow with many games/friends)
+            // For now, only fetch achievement data if this is enabled and we have an API key
+            bool fetchAchievementData = PluginDatabase.PluginSettings.Settings.EnableSteamFriends;
+            
+            if (fetchAchievementData && !playerFriend.IsUser)
+            {
+                PopulateAchievementUnlocks(playerFriend);
+            }
+
+            return playerFriend;
+        }
+
+        /// <summary>
+        /// Populates achievement unlock data for all games owned by a friend.
+        /// This is a slow operation as it makes one API call per game.
+        /// </summary>
+        private void PopulateAchievementUnlocks(PlayerFriend friend)
+        {
+            if (friend.Games == null || friend.Games.Count == 0)
+            {
+                return;
+            }
+
+            LogManager.GetLogger().Info($"Steam - Fetching achievement unlock data for {friend.FriendPseudo} ({friend.Games.Count} games)");
+
+            int successCount = 0;
+            int failCount = 0;
+
+            foreach (var game in friend.Games.Where(g => g.Achievements > 0))
+            {
+                if (PluginDatabase.FriendsDataIsCanceled)
+                {
+                    LogManager.GetLogger().Info("Steam - Achievement data fetch canceled");
+                    break;
+                }
+
+                if (!uint.TryParse(game.Id, out uint appId))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var unlocks = GetFriendAchievementUnlocks(friend.FriendId, appId);
+                    if (unlocks.Count > 0)
+                    {
+                        game.AchievementUnlocks = unlocks;
+                        successCount++;
+                    }
+                    else
+                    {
+                        failCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogManager.GetLogger().Warn(ex, $"Steam - Failed to fetch achievements for game {appId}");
+                    failCount++;
+                }
+            }
+
+            LogManager.GetLogger().Info($"Steam - Fetched achievement data for {successCount} games, {failCount} failed for {friend.FriendPseudo}");
         }
 
         /// <summary>
