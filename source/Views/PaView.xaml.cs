@@ -104,10 +104,22 @@ namespace PlayerActivities.Views
             int defaultDays = PluginDatabase.PluginSettings.Settings.DateFilterDays;
             ControlDataContext.SelectedDateFilter = ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == defaultDays) 
                 ?? ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == 30);
+
+            // Initialize custom date range if saved in settings
+            if (PluginDatabase.PluginSettings.Settings.DateFilterStartDate.HasValue)
+            {
+                ControlDataContext.CustomStartDate = PluginDatabase.PluginSettings.Settings.DateFilterStartDate;
+            }
+            if (PluginDatabase.PluginSettings.Settings.DateFilterEndDate.HasValue)
+            {
+                ControlDataContext.CustomEndDate = PluginDatabase.PluginSettings.Settings.DateFilterEndDate;
+            }
         }
 
         private void Database_ItemUpdated(object sender, ItemUpdatedEventArgs<PlayerActivitiesData> e)
         {
+            // Invalidate cache when data is updated
+            PluginDatabase.InvalidateCache();
             GetData();
         }
 
