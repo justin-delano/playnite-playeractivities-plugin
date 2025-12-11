@@ -518,7 +518,7 @@ namespace CommonPluginsShared
                         var redirectUri = response.Headers.Location;
                         if (redirectUri == null)
                         {
-                            Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: Redirect response missing Location header for {url}");
+                            Logger.Error($"DownloadStringData() - Depth {redirectDepth}: Redirect response (status {statusCode}) missing Location header for {url}");
                             return string.Empty;
                         }
                         
@@ -559,16 +559,16 @@ namespace CommonPluginsShared
                             updatedCookies = ExtractCookiesFromContainer(cookieContainer);
                             Logger.Info($"DownloadStringData() - Depth {redirectDepth}: Extracted {updatedCookies?.Count ?? 0} cookies from container for redirect");
                             
-                            if (updatedCookies != null && cookies != null)
+                            if (updatedCookies != null && cookies != null && updatedCookies.Count != cookies.Count)
                             {
-                                int newCookies = updatedCookies.Count - cookies.Count;
-                                if (newCookies > 0)
+                                int cookieDiff = updatedCookies.Count - cookies.Count;
+                                if (cookieDiff > 0)
                                 {
-                                    Logger.Info($"DownloadStringData() - Depth {redirectDepth}: {newCookies} new cookies added by server");
+                                    Logger.Info($"DownloadStringData() - Depth {redirectDepth}: {cookieDiff} new/updated cookies from server");
                                 }
-                                else if (newCookies < 0)
+                                else
                                 {
-                                    Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: {Math.Abs(newCookies)} cookies lost during extraction");
+                                    Logger.Warn($"DownloadStringData() - Depth {redirectDepth}: {Math.Abs(cookieDiff)} fewer cookies after extraction (may indicate cookie updates or removals)");
                                 }
                             }
                         }
@@ -1104,6 +1104,7 @@ namespace CommonPluginsShared
         /// <summary>
         /// Extracts all cookies from a CookieContainer and converts them to HttpCookie list.
         /// This is needed to preserve cookies across manual redirects.
+        /// Uses reflection as a fallback since CookieContainer doesn't provide a public API to enumerate all cookies.
         /// </summary>
         /// <param name="container">The CookieContainer to extract cookies from</param>
         /// <returns>List of HttpCookie objects</returns>
@@ -1119,58 +1120,114 @@ namespace CommonPluginsShared
 
             Logger.Info($"ExtractCookiesFromContainer() - Container has {container.Count} cookies");
 
-            // Use reflection to access the internal cookie collection
-            // CookieContainer doesn't provide a public API to enumerate all cookies
-            try
+            // Try well-known domains first (most common scenarios)
+            List<string> knownDomains = new List<string>
             {
-                var table = container.GetType().InvokeMember(
-                    "m_domainTable",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.Instance,
-                    null,
-                    container,
-                    new object[] { });
+                ".steamcommunity.com", "steamcommunity.com",
+                ".steampowered.com", "steampowered.com",
+                ".store.steampowered.com", "store.steampowered.com",
+                ".login.steampowered.com", "login.steampowered.com",
+                ".help.steampowered.com", "help.steampowered.com",
+                ".checkout.steampowered.com", "checkout.steampowered.com",
+                ".gog.com", "gog.com",
+                ".epicgames.com", "epicgames.com"
+            };
 
-                if (table != null)
+            HashSet<string> seenCookies = new HashSet<string>();
+            
+            foreach (string domain in knownDomains)
+            {
+                try
                 {
-                    int domainCount = 0;
-                    foreach (var tableEntry in (System.Collections.IEnumerable)table)
+                    Uri uri = new Uri($"https://{domain.TrimStart('.')}");
+                    CookieCollection cookies = container.GetCookies(uri);
+                    
+                    foreach (Cookie cookie in cookies)
                     {
-                        domainCount++;
-                        var values = tableEntry.GetType().GetProperty("Value").GetValue(tableEntry, null);
-                        if (values != null)
+                        string cookieKey = $"{cookie.Domain}|{cookie.Path}|{cookie.Name}";
+                        if (!seenCookies.Contains(cookieKey))
                         {
-                            foreach (var value in (System.Collections.IEnumerable)values)
+                            httpCookies.Add(new HttpCookie
                             {
-                                var cookieCollection = value.GetType().GetProperty("Value").GetValue(value, null) as CookieCollection;
-                                if (cookieCollection != null)
+                                Name = cookie.Name,
+                                Value = cookie.Value,
+                                Domain = cookie.Domain,
+                                Path = cookie.Path,
+                                Secure = cookie.Secure,
+                                HttpOnly = cookie.HttpOnly,
+                                Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
+                            });
+                            seenCookies.Add(cookieKey);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"ExtractCookiesFromContainer() - Error getting cookies for domain {domain}: {ex.Message}");
+                }
+            }
+
+            // If we didn't extract enough cookies, fall back to reflection
+            if (httpCookies.Count < container.Count)
+            {
+                Logger.Info($"ExtractCookiesFromContainer() - Only extracted {httpCookies.Count} of {container.Count} cookies using known domains, trying reflection fallback");
+                
+                try
+                {
+                    var table = container.GetType().InvokeMember(
+                        "m_domainTable",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.Instance,
+                        null,
+                        container,
+                        new object[] { });
+
+                    if (table != null)
+                    {
+                        int domainCount = 0;
+                        foreach (var tableEntry in (System.Collections.IEnumerable)table)
+                        {
+                            domainCount++;
+                            var values = tableEntry.GetType().GetProperty("Value").GetValue(tableEntry, null);
+                            if (values != null)
+                            {
+                                foreach (var value in (System.Collections.IEnumerable)values)
                                 {
-                                    foreach (Cookie cookie in cookieCollection)
+                                    var cookieCollection = value.GetType().GetProperty("Value").GetValue(value, null) as CookieCollection;
+                                    if (cookieCollection != null)
                                     {
-                                        httpCookies.Add(new HttpCookie
+                                        foreach (Cookie cookie in cookieCollection)
                                         {
-                                            Name = cookie.Name,
-                                            Value = cookie.Value,
-                                            Domain = cookie.Domain,
-                                            Path = cookie.Path,
-                                            Secure = cookie.Secure,
-                                            HttpOnly = cookie.HttpOnly,
-                                            Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
-                                        });
+                                            string cookieKey = $"{cookie.Domain}|{cookie.Path}|{cookie.Name}";
+                                            if (!seenCookies.Contains(cookieKey))
+                                            {
+                                                httpCookies.Add(new HttpCookie
+                                                {
+                                                    Name = cookie.Name,
+                                                    Value = cookie.Value,
+                                                    Domain = cookie.Domain,
+                                                    Path = cookie.Path,
+                                                    Secure = cookie.Secure,
+                                                    HttpOnly = cookie.HttpOnly,
+                                                    Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
+                                                });
+                                                seenCookies.Add(cookieKey);
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
+                        Logger.Info($"ExtractCookiesFromContainer() - Reflection fallback extracted {httpCookies.Count} total cookies from {domainCount} domains");
                     }
-                    Logger.Info($"ExtractCookiesFromContainer() - Extracted {httpCookies.Count} cookies from {domainCount} domains");
+                    else
+                    {
+                        Logger.Warn("ExtractCookiesFromContainer() - Reflection: Domain table is null");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Logger.Warn("ExtractCookiesFromContainer() - Domain table is null");
+                    Logger.Warn(ex, $"ExtractCookiesFromContainer() - Reflection fallback failed (have {httpCookies.Count} cookies from known domains)");
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn(ex, $"ExtractCookiesFromContainer() - Failed to extract cookies from CookieContainer (extracted {httpCookies.Count} so far), using fallback");
             }
 
             Logger.Info($"ExtractCookiesFromContainer() - Returning {httpCookies.Count} cookies");
