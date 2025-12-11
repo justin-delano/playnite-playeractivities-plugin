@@ -67,6 +67,15 @@ namespace PlayerActivities.Clients
             {
                 Logger.Info($"{ClientName} - Starting to fetch friends data");
                 
+                // Force a fresh authentication check to refresh cookies if needed
+                StoreApi.ResetIsUserLoggedIn();
+                if (!IsUserLoggedIn)
+                {
+                    Logger.Error($"{ClientName} - Authentication failed after cookie refresh");
+                    ShowAuthenticationExpiredNotification();
+                    return friends;
+                }
+                
                 var currentUser = StoreApi.CurrentAccountInfos;
                 if (currentUser == null)
                 {
@@ -83,7 +92,9 @@ namespace PlayerActivities.Clients
                 // Check if we got no games which might indicate authentication issues
                 if (currentGamesInfos == null || !currentGamesInfos.Any())
                 {
-                    Logger.Warn($"{ClientName} - No games data available, this may indicate expired authentication");
+                    Logger.Error($"{ClientName} - Current user has no games data. Cookies may be expired or not properly set.");
+                    ShowCookieIssueNotification();
+                    return friends;
                 }
 
                 var playerFriendsUs = BuildPlayerFriend(currentUser, currentGamesInfos);
@@ -127,11 +138,10 @@ namespace PlayerActivities.Clients
                     friends.Add(playerFriend);
                 }
                 
-                // If all friends have no games data, likely a privacy or authentication issue
+                // If all friends have no games data, likely a privacy issue
                 if (failedFriends > 0 && failedFriends == currentFriendsInfos.Count)
                 {
-                    Logger.Error($"{ClientName} - All {failedFriends} friends returned 0 games.");
-                    ShowPrivacyOrAuthNotification();
+                    Logger.Warn($"{ClientName} - All {failedFriends} friends returned 0 games. They may have private profiles.");
                 }
                 
                 Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user)");
@@ -288,6 +298,39 @@ namespace PlayerActivities.Clients
         #endregion
 
         #region Errors
+
+        /// <summary>
+        /// Shows a notification about cookie/session issues with Steam.
+        /// </summary>
+        private void ShowCookieIssueNotification()
+        {
+            string message = $"{ClientName} is authenticated but unable to retrieve game data.\n\n" +
+                           $"This is a known issue with Steam's web session cookies.\n\n" +
+                           $"To fix:\n" +
+                           $"1. Close Playnite completely\n" +
+                           $"2. Open Steam in your browser and log in\n" +
+                           $"3. Visit steamcommunity.com/my/games and verify you can see your games\n" +
+                           $"4. Restart Playnite and try again\n\n" +
+                           $"If this doesn't work, you may need to clear your browser's Steam cookies and re-authenticate.";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-cookie-issue",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Error,
+                () =>
+                {
+                    try
+                    {
+                        // Open Steam community in browser
+                        System.Diagnostics.Process.Start("https://steamcommunity.com/my/games");
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
 
         /// <summary>
         /// Shows a notification about privacy settings or expired authentication.
