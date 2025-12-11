@@ -59,13 +59,34 @@ namespace PlayerActivities.Clients
 
             if (!EnsureAuthenticated())
             {
+                Logger.Warn($"{ClientName} - User not authenticated");
                 return friends;
             }
 
             try
             {
+                Logger.Info($"{ClientName} - Starting to fetch friends data");
+                
                 var currentUser = StoreApi.CurrentAccountInfos;
+                if (currentUser == null)
+                {
+                    Logger.Warn($"{ClientName} - CurrentAccountInfos is null, authentication may have failed");
+                    ShowAuthenticationExpiredNotification();
+                    return friends;
+                }
+                
+                Logger.Info($"{ClientName} - Current user: {currentUser.Pseudo} (ID: {currentUser.UserId})");
+                
                 var currentGamesInfos = StoreApi.CurrentGamesInfos;
+                Logger.Info($"{ClientName} - Current user has {currentGamesInfos?.Count() ?? 0} games");
+
+                // Check if we got no games which indicates a library issue with cookie propagation
+                if (currentGamesInfos == null || !currentGamesInfos.Any())
+                {
+                    Logger.Error($"{ClientName} - Current user has no games data. This is a known issue with the CommonPluginsStores library not properly passing Steam cookies to game data endpoints.");
+                    ShowLibraryIssueNotification();
+                    // Still try to add the user with empty games list
+                }
 
                 var playerFriendsUs = BuildPlayerFriend(currentUser, currentGamesInfos);
                 friends.Add(playerFriendsUs);
@@ -73,28 +94,46 @@ namespace PlayerActivities.Clients
                 var currentFriendsInfos = StoreApi.CurrentFriendsInfos;
                 if (currentFriendsInfos == null)
                 {
+                    Logger.Warn($"{ClientName} - CurrentFriendsInfos is null, no friends data available");
                     return friends;
                 }
+                
+                Logger.Info($"{ClientName} - Found {currentFriendsInfos.Count} friends");
 
                 PluginDatabase.FriendsDataLoading.FriendCount = currentFriendsInfos.Count;
 
+                int failedFriends = 0;
+                
                 // Enumerate friends and add with stats and games
                 foreach (var friend in currentFriendsInfos)
                 {
                     if (PluginDatabase.FriendsDataIsCanceled)
                     {
+                        Logger.Info($"{ClientName} - Friends data fetch canceled");
                         break;
                     }
 
                     PluginDatabase.FriendsDataLoading.FriendName = friend.Pseudo;
+                    Logger.Info($"{ClientName} - Fetching data for friend: {friend.Pseudo}");
 
                     var playerFriend = BuildPlayerFriend(friend);
+                    
+                    if (playerFriend.Games.Count == 0)
+                    {
+                        failedFriends++;
+                    }
+                    
+                    Logger.Info($"{ClientName} - Friend {friend.Pseudo} has {playerFriend.Games.Count} games, {playerFriend.Stats.Achievements} achievements");
+                    
                     PluginDatabase.FriendsDataLoading.ActualCount++;
                     friends.Add(playerFriend);
                 }
+                
+                Logger.Info($"{ClientName} - Successfully fetched data for {friends.Count} friends (including current user). {failedFriends} friends have no game data due to library limitations.");
             }
             catch (Exception ex)
             {
+                Logger.Error(ex, $"{ClientName} - Error fetching friends data");
                 Common.LogError(ex, false, true, PluginDatabase.PluginName);
             }
 
@@ -147,35 +186,51 @@ namespace PlayerActivities.Clients
         /// </returns>
         protected PlayerFriend BuildPlayerFriend(AccountInfos account, IEnumerable<AccountGameInfos> games = null)
         {
-            games = games ?? StoreApi.GetAccountGamesInfos(account);
-
-            return new PlayerFriend
+            try
             {
-                ClientName = ClientName,
-                FriendId = account.UserId,
-                ClientId = account.ClientId,
-                FriendPseudo = account.Pseudo,
-                FriendsAvatar = account.Avatar,
-                FriendsLink = account.Link,
-                IsUser = account.IsCurrent,
-                AcceptedAt = account.DateAdded,
-                Stats = new PlayerStats
+                if (games == null)
                 {
-                    GamesOwned = games?.Count() ?? 0,
-                    Achievements = games?.Sum(x => x.AchievementsUnlocked) ?? 0,
-                    Playtime = games?.Sum(x => x.Playtime) ?? 0
-                },
-                Games = games?.Select(x => new PlayerGame
+                    games = StoreApi.GetAccountGamesInfos(account);
+                    
+                    if (games == null || !games.Any())
+                    {
+                        Logger.Warn($"{ClientName} - No games data available for {account.Pseudo}. Profile may be private or have restricted game details visibility.");
+                    }
+                }
+
+                return new PlayerFriend
                 {
-                    Achievements = x.AchievementsUnlocked,
-                    Playtime = x.Playtime,
-                    Id = x.Id,
-                    IsCommun = x.IsCommun,
-                    Link = x.Link,
-                    Name = x.Name
-                }).ToList() ?? new List<PlayerGame>(),
-                LastUpdate = DateTime.Now
-            };
+                    ClientName = ClientName,
+                    FriendId = account.UserId,
+                    ClientId = account.ClientId,
+                    FriendPseudo = account.Pseudo,
+                    FriendsAvatar = account.Avatar,
+                    FriendsLink = account.Link,
+                    IsUser = account.IsCurrent,
+                    AcceptedAt = account.DateAdded,
+                    Stats = new PlayerStats
+                    {
+                        GamesOwned = games?.Count() ?? 0,
+                        Achievements = games?.Sum(x => x.AchievementsUnlocked) ?? 0,
+                        Playtime = games?.Sum(x => x.Playtime) ?? 0
+                    },
+                    Games = games?.Select(x => new PlayerGame
+                    {
+                        Achievements = x.AchievementsUnlocked,
+                        Playtime = x.Playtime,
+                        Id = x.Id,
+                        IsCommun = x.IsCommun,
+                        Link = x.Link,
+                        Name = x.Name
+                    }).ToList() ?? new List<PlayerGame>(),
+                    LastUpdate = DateTime.Now
+                };
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"{ClientName} - Error building PlayerFriend for {account.Pseudo}");
+                throw;
+            }
         }
 
         /// <summary>
@@ -228,6 +283,123 @@ namespace PlayerActivities.Clients
         #endregion
 
         #region Errors
+
+        /// <summary>
+        /// Shows a notification about a known library issue with Steam cookie propagation.
+        /// </summary>
+        private void ShowLibraryIssueNotification()
+        {
+            string message = $"Unable to retrieve {ClientName} game data due to a known issue with the CommonPluginsStores library.\n\n" +
+                           $"The library is not properly passing Steam session cookies to game data endpoints, causing all requests to be redirected to the login page.\n\n" +
+                           $"This is a limitation of the current version of the dependency library and requires an update from the plugin author.\n\n" +
+                           $"Possible solutions:\n" +
+                           $"• Wait for a plugin update that fixes this library issue\n" +
+                           $"• Contact the plugin author about this Steam cookie propagation bug\n" +
+                           $"• The plugin author could implement direct Steam Web API calls instead";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-library-issue",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Error
+            ));
+        }
+
+        /// <summary>
+        /// Shows a notification about cookie/session issues with Steam.
+        /// </summary>
+        private void ShowCookieIssueNotification()
+        {
+            string message = $"{ClientName} is authenticated but unable to retrieve game data.\n\n" +
+                           $"This is a known issue with Steam's web session cookies.\n\n" +
+                           $"To fix:\n" +
+                           $"1. Close Playnite completely\n" +
+                           $"2. Open Steam in your browser and log in\n" +
+                           $"3. Visit steamcommunity.com/my/games and verify you can see your games\n" +
+                           $"4. Restart Playnite and try again\n\n" +
+                           $"If this doesn't work, you may need to clear your browser's Steam cookies and re-authenticate.";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-cookie-issue",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Error,
+                () =>
+                {
+                    try
+                    {
+                        // Open Steam community in browser
+                        System.Diagnostics.Process.Start("https://steamcommunity.com/my/games");
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
+
+        /// <summary>
+        /// Shows a notification about privacy settings or expired authentication.
+        /// </summary>
+        private void ShowPrivacyOrAuthNotification()
+        {
+            string message = $"{ClientName} friends data could not be retrieved. This can happen because:\n\n" +
+                           $"1. Your friends have their game details set to PRIVATE in {ClientName}\n" +
+                           $"2. Your authentication has expired\n\n" +
+                           $"To fix:\n" +
+                           $"• Ask friends to set their game details to PUBLIC in {ClientName} privacy settings\n" +
+                           $"• Or try re-authenticating in plugin settings";
+
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-privacy-or-auth",
+                $"{PluginDatabase.PluginName}\r\n{message}",
+                NotificationType.Info,
+                () =>
+                {
+                    try
+                    {
+                        Plugin plugin = API.Instance.Addons.Plugins.Find(x => x.Id == PlayniteTools.GetPluginId(
+                            ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
+                        if (plugin != null)
+                        {
+                            _ = plugin.OpenSettingsView();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
+
+        /// <summary>
+        /// Shows a notification error when authentication cookies have expired.
+        /// Offers to open the plugin settings for re-authentication.
+        /// </summary>
+        private void ShowAuthenticationExpiredNotification()
+        {
+            API.Instance.Notifications.Add(new NotificationMessage(
+                $"{PluginDatabase.PluginName}-{ClientName.RemoveWhiteSpace()}-expired-auth",
+                $"{PluginDatabase.PluginName}\r\n{ClientName} authentication has expired. Please re-authenticate in the plugin settings to fetch friends data.",
+                NotificationType.Error,
+                () =>
+                {
+                    try
+                    {
+                        Plugin plugin = API.Instance.Addons.Plugins.Find(x => x.Id == PlayniteTools.GetPluginId(
+                            ClientName.IsEqual("EA") ? ExternalPlugin.OriginLibrary : ExternalPlugin.PlayerActivities));
+                        if (plugin != null)
+                        {
+                            _ = plugin.OpenSettingsView();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Common.LogError(ex, false, true, PluginDatabase.PluginName);
+                    }
+                }
+            ));
+        }
 
         /// <summary>
         /// Shows a notification error when plugin authentication is missing or failed.

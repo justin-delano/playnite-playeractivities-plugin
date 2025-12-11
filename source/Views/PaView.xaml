@@ -140,36 +140,64 @@
                 <!-- Filter -->
                 <Border Grid.Row="0" BorderThickness="{DynamicResource PopupBorderThickness}" BorderBrush="{DynamicResource NormalBorderBrush}">
                     <Grid Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="auto" />
-                            <ColumnDefinition Width="6" />
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="auto" />
-                            <ColumnDefinition Width="6" />
-                            <ColumnDefinition Width="250" />
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto" />
+                            <RowDefinition Height="5" />
+                            <RowDefinition Height="auto" />
+                        </Grid.RowDefinitions>
+                        
+                        <!-- First row: Search and Source filters -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="250" />
+                            </Grid.ColumnDefinitions>
 
-                        <Label Grid.Column="0" Content="{DynamicResource LOCSearchLabel}" FontSize="16" />
-                        <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" TextChanged="TextboxSearch_TextChanged" />
+                            <Label Grid.Column="0" Content="{DynamicResource LOCSearchLabel}" FontSize="16" />
+                            <playnitecontrols:SearchBox Grid.Column="2" x:Name="TextboxSearch" KeyDown="TextboxSearch_KeyDown" />
 
-                        <Label Grid.Column="4" Content="{DynamicResource LOCSourceLabel}" FontSize="16" />
-                        <ComboBox Grid.Column="6" Name="FilterSource" ItemsSource="{Binding FilterSourceItems}" IsEditable="True" IsReadOnly="True">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <CheckBox Name="chkSource" Checked="ChkSource_Checked" Unchecked="ChkSource_Unchecked" Tag="{Binding SourceNameShort}"
-                                              Content="{Binding SourceName}" IsChecked="{Binding IsCheck, Mode=TwoWay}" FontFamily="{DynamicResource CommonFont}">
-                                    </CheckBox>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
+                            <Label Grid.Column="4" Content="{DynamicResource LOCSourceLabel}" FontSize="16" />
+                            <ComboBox Grid.Column="6" Name="FilterSource" ItemsSource="{Binding FilterSourceItems}" IsEditable="True" IsReadOnly="True">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Name="chkSource" Checked="ChkSource_Checked" Unchecked="ChkSource_Unchecked" Tag="{Binding SourceNameShort}"
+                                                  Content="{Binding SourceName}" IsChecked="{Binding IsCheck, Mode=TwoWay}" FontFamily="{DynamicResource CommonFont}">
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Second row: Date filter -->
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="auto" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Label Grid.Column="0" Content="{DynamicResource LOCPaDateFilter}" FontSize="16" />
+                            <ComboBox Grid.Column="2" Name="CbDateFilter" 
+                                      ItemsSource="{Binding DateFilterOptions}" 
+                                      SelectedItem="{Binding SelectedDateFilter, Mode=TwoWay}"
+                                      DisplayMemberPath="Name"
+                                      SelectionChanged="CbDateFilter_SelectionChanged" />
+                        </Grid>
                     </Grid>
                 </Border>
 
                 <!-- Player time line -->
                 <Grid Name="PART_GridContener" Grid.Row="2">
                     <ListBox ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
-                             ScrollViewer.VerticalScrollBarVisibility="Auto" 
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="False"
+                             VirtualizingPanel.ScrollUnit="Pixel"
                              Name="PART_LbTimeLine"
                              ItemsSource="{Binding ItemsSource}" BorderThickness="0"
                              Width="{Binding ElementName=PART_GridContener, Path=ActualWidth}"
@@ -214,7 +242,9 @@
                                                               MaxHeight="100"
                                                               VerticalAlignment="Top" HorizontalAlignment="Center" />
 
-                                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" MaxHeight="500">
+                                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" MaxHeight="500"
+                                                      PanningMode="None"
+                                                      PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
                                             <ItemsControl Name="PART_ItemsControl" ItemsSource="{Binding ActivitiesOrdered}" >
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>

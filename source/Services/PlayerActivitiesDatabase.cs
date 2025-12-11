@@ -98,6 +98,11 @@ namespace PlayerActivities.Services
             }
         }
 
+        // Cache for activities data to improve performance
+        // Only cache the default 7-day view since that's accessed most frequently
+        private ObservableCollection<ActivityListGrouped> _cached7DaysData = null;
+        private const int CachedDays = 7; // Only cache 7-day view
+
         #endregion
 
         public PlayerActivitiesDatabase(PlayerActivitiesSettingsViewModel pluginSettings, string pluginUserDataPath) : base(pluginSettings, "PlayerActivities", pluginUserDataPath)
@@ -175,6 +180,9 @@ namespace PlayerActivities.Services
                 FirstScanGameActivity(id);
 
                 Database.EndBufferUpdate();
+
+                // Invalidate cache after data refresh
+                InvalidateCache();
             }, globalProgressOptions);
         }
 
@@ -543,13 +551,15 @@ namespace PlayerActivities.Services
         /// Retrieves activities related to a specific game identified by its Guid.
         /// </summary>
         /// <param name="id">The unique identifier (Guid) of the game to filter activities for.</param>
+        /// <param name="startDate">Optional start date to filter activities from.</param>
+        /// <param name="endDate">Optional end date to filter activities until.</param>
         /// <returns>
         /// An <see cref="ObservableCollection{ActivityListGrouped}"/> containing only
         /// the activities associated with the specified game. Returns an empty collection if none are found.
         /// </returns>
-        public ObservableCollection<ActivityListGrouped> GetActivitiesData(Guid id)
+        public ObservableCollection<ActivityListGrouped> GetActivitiesData(Guid id, DateTime? startDate = null, DateTime? endDate = null)
         {
-            ObservableCollection<ActivityListGrouped> data = GetActivitiesData(false);
+            ObservableCollection<ActivityListGrouped> data = GetActivitiesData(grouped: false, startDate: startDate, endDate: endDate);
             return new ObservableCollection<ActivityListGrouped>(data.Where(x => x.GameContext.Id == id));
         }
 
@@ -560,12 +570,27 @@ namespace PlayerActivities.Services
         /// If <c>true</c>, groups activities by game and relative time period ("TimeAgo").
         /// If <c>false</c>, each activity is listed independently, grouped only by game.
         /// </param>
+        /// <param name="startDate">Optional start date to filter activities from.</param>
+        /// <param name="endDate">Optional end date to filter activities until.</param>
         /// <returns>
         /// An <see cref="ObservableCollection{ActivityListGrouped}"/> containing grouped activity data,
         /// ordered by date descending. Returns an empty collection if no activity matches the configured types.
         /// </returns>
-        public ObservableCollection<ActivityListGrouped> GetActivitiesData(bool grouped = true)
+        public ObservableCollection<ActivityListGrouped> GetActivitiesData(bool grouped = true, DateTime? startDate = null, DateTime? endDate = null)
         {
+            // Check if this is a 7-day request and we have cached data
+            bool is7DayRequest = startDate.HasValue && endDate.HasValue &&
+                                 (endDate.Value - startDate.Value).Days <= CachedDays &&
+                                 startDate.Value.Date == DateTime.Now.AddDays(-CachedDays).Date;
+
+            if (is7DayRequest && _cached7DaysData != null)
+            {
+                Logger.Info($"Returning cached 7-day activities data");
+                return _cached7DaysData;
+            }
+
+            Logger.Info($"Loading activities data with date filter: {startDate?.ToString("yyyy-MM-dd") ?? "null"} to {endDate?.ToString("yyyy-MM-dd") ?? "null"}");
+
             // Step 1: Flatten all activity items from games that exist in the database
             var activityLists = Database
                 .Where(x => x.GameExist)
@@ -598,9 +623,22 @@ namespace PlayerActivities.Services
                 activityTypes.Add(ActivityType.AchievementsUnlocked);
             }
 
-            // Step 3: Filter and group activity data
-            var filteredActivities = activityLists.Where(x => activityTypes.Contains(x.Type));
+            // Step 3: Filter activities by type and date range
+            var filteredActivities = activityLists
+                .Where(x => activityTypes.Contains(x.Type));
 
+            // Apply date filtering if enabled
+            if (startDate.HasValue)
+            {
+                filteredActivities = filteredActivities.Where(x => x.DateActivity >= startDate.Value.Date);
+            }
+
+            if (endDate.HasValue)
+            {
+                filteredActivities = filteredActivities.Where(x => x.DateActivity <= endDate.Value.Date);
+            }
+
+            // Step 4: Group activity data
             var groupedActivities = new ObservableCollection<ActivityListGrouped>();
 
             foreach (var activity in filteredActivities)
@@ -638,7 +676,7 @@ namespace PlayerActivities.Services
                 }
             }
 
-            // Step 4: Sort activities within each group
+            // Step 5: Sort activities within each group
             foreach (var group in groupedActivities)
             {
                 group.Activities = group.Activities
@@ -647,7 +685,27 @@ namespace PlayerActivities.Services
                     .ToList();
             }
 
+            // Step 6: Update cache only for 7-day requests
+            if (is7DayRequest)
+            {
+                _cached7DaysData = groupedActivities;
+                Logger.Info($"Loaded and cached {groupedActivities.Count} activity groups for 7-day view");
+            }
+            else
+            {
+                Logger.Info($"Loaded {groupedActivities.Count} activity groups (not cached)");
+            }
+
             return groupedActivities;
+        }
+
+        /// <summary>
+        /// Invalidates the activities data cache, forcing a fresh load on next access.
+        /// </summary>
+        public void InvalidateCache()
+        {
+            _cached7DaysData = null;
+            Logger.Info("7-day activities data cache invalidated");
         }
 
         #endregion

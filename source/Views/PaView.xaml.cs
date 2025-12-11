@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Threading;
+using System.Windows.Input;
 
 namespace PlayerActivities.Views
 {
@@ -33,6 +34,9 @@ namespace PlayerActivities.Views
         internal static PaViewData ControlDataContext { get; set; } = new PaViewData();
 
         private List<string> SearchSources { get; set; } = new List<string>();
+        
+        // Cache CollectionView reference for better performance
+        private CollectionView _collectionView;
 
         private bool TimeLineFilter(object item)
         {
@@ -43,15 +47,34 @@ namespace PlayerActivities.Views
 
             ActivityListGrouped el = item as ActivityListGrouped;
 
-            bool txtFilter = el.GameContext.Name.Contains(TextboxSearch.Text, StringComparison.InvariantCultureIgnoreCase);
+            // Text search - when searching, ignore date filter to show all matching results
+            bool txtFilter = string.IsNullOrEmpty(TextboxSearch.Text) || 
+                           el.GameContext.Name.Contains(TextboxSearch.Text, StringComparison.InvariantCultureIgnoreCase);
 
+            // Source filter
             bool sourceFilter = true;
             if (SearchSources.Count > 0)
             {
                 sourceFilter = SearchSources.Where(x => PlayniteTools.GetSourceName(el.GameContext).IsEqual(x)).Count() > 0;
             }
 
-            return txtFilter && sourceFilter;
+            // Date filter - only apply when NOT searching
+            bool dateFilter = true;
+            if (string.IsNullOrEmpty(TextboxSearch.Text) && 
+                PluginDatabase.PluginSettings.Settings.EnableDateFilter && 
+                ControlDataContext.SelectedDateFilter != null)
+            {
+                DateTime? startDate = ControlDataContext.SelectedDateFilter.GetStartDate();
+                DateTime? endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
+                
+                if (startDate.HasValue && endDate.HasValue)
+                {
+                    // Check if any activity in this group falls within the date range
+                    dateFilter = el.Activities.Any(a => a.DateActivity >= startDate.Value && a.DateActivity <= endDate.Value);
+                }
+            }
+
+            return txtFilter && sourceFilter && dateFilter;
         }
 
         private bool IsDataFinished = false;
@@ -67,6 +90,30 @@ namespace PlayerActivities.Views
             PART_DataLoad.Visibility = Visibility.Visible;
             PART_Data.Visibility = Visibility.Hidden;
             PART_DataRerefsh.Visibility = Visibility.Collapsed;
+
+            // Initialize date filter options
+            InitializeDateFilterOptions();
+            
+            // Initialize RefreshGameDataCommand
+            RefreshGameDataCommand = new RelayCommand<Game>((game) =>
+            {
+                if (game == null)
+                {
+                    return;
+                }
+
+                PluginDatabase.InitializePluginData(true, game.Id);
+                
+                // Invalidate cache and reload all data
+                PluginDatabase.InvalidateCache();
+                PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                
+                // Refresh view to apply current filter
+                _collectionView?.Refresh();
+            });
+            
+            // Also assign to ControlDataContext
+            ControlDataContext.RefreshGameDataCommand = RefreshGameDataCommand;
 
             GetData();
             GetFriends();
@@ -87,8 +134,22 @@ namespace PlayerActivities.Views
             }
         }
 
+        private void InitializeDateFilterOptions()
+        {
+            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast7Days"), Days = 7, IsCustom = false });
+            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast30Days"), Days = 30, IsCustom = false });
+            ControlDataContext.DateFilterOptions.Add(new DateFilterOption { Name = ResourceProvider.GetString("LOCPaDateFilterLast90Days"), Days = 90, IsCustom = false });
+
+            // Set default filter based on settings (default to 7 days)
+            int defaultDays = PluginDatabase.PluginSettings.Settings.DateFilterDays;
+            ControlDataContext.SelectedDateFilter = ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == defaultDays) 
+                ?? ControlDataContext.DateFilterOptions.FirstOrDefault(x => x.Days == 7);
+        }
+
         private void Database_ItemUpdated(object sender, ItemUpdatedEventArgs<PlayerActivitiesData> e)
         {
+            // Invalidate cache when data is updated
+            PluginDatabase.InvalidateCache();
             GetData();
         }
 
@@ -98,7 +159,11 @@ namespace PlayerActivities.Views
         {
             _ = Task.Run(() =>
             {
-                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData();
+                // Load only 7-day data initially for faster first load (uses cache)
+                // When user searches, we'll reload all data dynamically
+                DateTime startDate = DateTime.Now.AddDays(-7).Date;
+                DateTime endDate = DateTime.Now.Date;
+                ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);
 
                 IsDataFinished = true;
                 IsFinish();
@@ -130,12 +195,13 @@ namespace PlayerActivities.Views
 
                 _ = Task.Run(() =>
                 {
-                    Thread.Sleep(3000);
+                    // Reduced delay from 3000ms to 500ms for faster UI responsiveness
+                    Thread.Sleep(500);
 
                     _ = (Dispatcher?.BeginInvoke(DispatcherPriority.Loaded, new ThreadStart(delegate
                     {
-                        CollectionView view = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
-                        view.Filter = TimeLineFilter;
+                        _collectionView = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
+                        _collectionView.Filter = TimeLineFilter;
                     })));
                 });
             }
@@ -145,9 +211,19 @@ namespace PlayerActivities.Views
 
         #region Filter
 
-        private void TextboxSearch_TextChanged(object sender, TextChangedEventArgs e)
+        private void TextboxSearch_KeyDown(object sender, KeyEventArgs e)
         {
-            CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
+            if (e.Key == Key.Enter)
+            {
+                // If user is searching, reload all data to search across all time
+                if (!string.IsNullOrEmpty(TextboxSearch.Text))
+                {
+                    ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+                    _collectionView = (CollectionView)CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource);
+                    _collectionView.Filter = TimeLineFilter;
+                }
+                _collectionView?.Refresh();
+            }
         }
 
         private void ChkSource_Checked(object sender, RoutedEventArgs e)
@@ -178,8 +254,55 @@ namespace PlayerActivities.Views
                 FilterSource.Text = string.Join(", ", SearchSources);
             }
 
-            CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
+            _collectionView?.Refresh();
+        }
 
+        private void CbDateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ControlDataContext.SelectedDateFilter == null)
+            {
+                return;
+            }
+
+            // Refresh the view to apply new date filter
+            _collectionView?.Refresh();
+        }
+
+        private void ScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            // Pass mouse wheel events to parent to prevent scroll getting stuck
+            if (sender is ScrollViewer scrollViewer)
+            {
+                // Get the parent ScrollViewer (the main ListBox's scroll viewer)
+                var parentScrollViewer = FindParent<ScrollViewer>(scrollViewer);
+                if (parentScrollViewer != null)
+                {
+                    // Only forward if we're at the boundary
+                    bool atTop = scrollViewer.VerticalOffset == 0 && e.Delta > 0;
+                    bool atBottom = scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight && e.Delta < 0;
+                    
+                    if (atTop || atBottom || scrollViewer.ScrollableHeight == 0)
+                    {
+                        e.Handled = true;
+                        var routedEvent = new System.Windows.Input.MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                        {
+                            RoutedEvent = UIElement.MouseWheelEvent,
+                            Source = sender
+                        };
+                        parentScrollViewer.RaiseEvent(routedEvent);
+                    }
+                }
+            }
+        }
+
+        private T FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parentObject = System.Windows.Media.VisualTreeHelper.GetParent(child);
+
+            if (parentObject == null) return null;
+
+            T parent = parentObject as T;
+            return parent ?? FindParent<T>(parentObject);
         }
 
         #endregion
@@ -283,6 +406,12 @@ namespace PlayerActivities.Views
         private DateTime? _lastFriendsRefresh;
         public DateTime? LastFriendsRefresh { get => _lastFriendsRefresh; set => SetValue(ref _lastFriendsRefresh, value); }
 
+        private ObservableCollection<DateFilterOption> _dateFilterOptions = new ObservableCollection<DateFilterOption>();
+        public ObservableCollection<DateFilterOption> DateFilterOptions { get => _dateFilterOptions; set => SetValue(ref _dateFilterOptions, value); }
+
+        private DateFilterOption _selectedDateFilter;
+        public DateFilterOption SelectedDateFilter { get => _selectedDateFilter; set => SetValue(ref _selectedDateFilter, value); }
+
 
         #region Menus
 
@@ -295,16 +424,7 @@ namespace PlayerActivities.Views
         public RelayCommand<Game> ShowGameInLibraryCommand { get; } = new RelayCommand<Game>((game)
             => Commands.GoToGame.Execute(game.Id));
 
-        public RelayCommand<Game> RefreshGameDataCommand { get; } = new RelayCommand<Game>((game) =>
-        {
-            if (game == null)
-            {
-                return;
-            }
-
-            PluginDatabase.InitializePluginData(true, game.Id);
-            PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData();
-        });
+        public RelayCommand<Game> RefreshGameDataCommand { get; set; }
 
         public RelayCommand<Game> ShowGameSuccessStoryCommand { get; } = new RelayCommand<Game>((game) 
             => SuccessStoryPlugin.SuccessStoryView(game));
@@ -335,5 +455,31 @@ namespace PlayerActivities.Views
         public long UsPlaytime { get; set; }
 
         public RelayCommand<object> NavigateUrl { get; } = new RelayCommand<object>((url) => GlobalCommands.NavigateUrl(url));
+    }
+
+
+    public class DateFilterOption : ObservableObject
+    {
+        public string Name { get; set; }
+        public int? Days { get; set; }
+        public bool IsCustom { get; set; }
+
+        public DateTime? GetStartDate()
+        {
+            if (IsCustom)
+            {
+                return null;
+            }
+            if (Days.HasValue)
+            {
+                return DateTime.Now.AddDays(-Days.Value).Date;
+            }
+            return null;
+        }
+
+        public DateTime? GetEndDate()
+        {
+            return DateTime.Now.Date.AddDays(1).AddSeconds(-1);
+        }
     }
 }

@@ -32,6 +32,10 @@ namespace PlayerActivities
         public bool EnableHowLongToBeatData { get; set; } = true;
 
 
+        public bool EnableDateFilter { get; set; } = true;
+        public int DateFilterDays { get; set; } = 7;
+
+
         public StoreSettings SteamStoreSettings { get; set; } = new StoreSettings { ForceAuth = true, UseAuth = true, UseApi = false };
         public StoreSettings GogStoreSettings { get; set; } = new StoreSettings { ForceAuth = true, UseAuth = true };
         public StoreSettings EpicStoreSettings { get; set; } = new StoreSettings { ForceAuth = true, UseAuth = true };
