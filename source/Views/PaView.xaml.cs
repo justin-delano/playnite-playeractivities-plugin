@@ -47,17 +47,34 @@ namespace PlayerActivities.Views
 
             ActivityListGrouped el = item as ActivityListGrouped;
 
-            // Text search - use simple name matching on current item (fast)
+            // Text search - when searching, ignore date filter to show all matching results
             bool txtFilter = string.IsNullOrEmpty(TextboxSearch.Text) || 
                            el.GameContext.Name.Contains(TextboxSearch.Text, StringComparison.InvariantCultureIgnoreCase);
 
+            // Source filter
             bool sourceFilter = true;
             if (SearchSources.Count > 0)
             {
                 sourceFilter = SearchSources.Where(x => PlayniteTools.GetSourceName(el.GameContext).IsEqual(x)).Count() > 0;
             }
 
-            return txtFilter && sourceFilter;
+            // Date filter - only apply when NOT searching
+            bool dateFilter = true;
+            if (string.IsNullOrEmpty(TextboxSearch.Text) && 
+                PluginDatabase.PluginSettings.Settings.EnableDateFilter && 
+                ControlDataContext.SelectedDateFilter != null)
+            {
+                DateTime? startDate = ControlDataContext.SelectedDateFilter.GetStartDate();
+                DateTime? endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
+                
+                if (startDate.HasValue && endDate.HasValue)
+                {
+                    // Check if any activity in this group falls within the date range
+                    dateFilter = el.Activities.Any(a => a.DateActivity >= startDate.Value && a.DateActivity <= endDate.Value);
+                }
+            }
+
+            return txtFilter && sourceFilter && dateFilter;
         }
 
         private bool IsDataFinished = false;
@@ -124,42 +141,9 @@ namespace PlayerActivities.Views
                 // Load all activities once (cached at 7-day level in database)
                 AllActivitiesData = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
                 
-                // Apply date filter in memory for display (fast, no DB hit)
-                DateTime? startDate = null;
-                DateTime? endDate = null;
-
-                if (PluginDatabase.PluginSettings.Settings.EnableDateFilter && ControlDataContext.SelectedDateFilter != null)
-                {
-                    startDate = ControlDataContext.SelectedDateFilter.GetStartDate();
-                    endDate = ControlDataContext.SelectedDateFilter.GetEndDate();
-                }
-
-                // Filter in memory instead of loading twice
-                if (startDate.HasValue && endDate.HasValue)
-                {
-                    var filteredData = new ObservableCollection<ActivityListGrouped>();
-                    foreach (var group in AllActivitiesData)
-                    {
-                        // Filter activities within date range
-                        var filteredActivities = group.Activities
-                            .Where(a => a.DateActivity >= startDate.Value && a.DateActivity <= endDate.Value)
-                            .ToList();
-                        
-                        if (filteredActivities.Any())
-                        {
-                            filteredData.Add(new ActivityListGrouped
-                            {
-                                GameContext = group.GameContext,
-                                Activities = filteredActivities
-                            });
-                        }
-                    }
-                    ControlDataContext.ItemsSource = filteredData;
-                }
-                else
-                {
-                    ControlDataContext.ItemsSource = AllActivitiesData;
-                }
+                // Always show all data - date filtering will be done in TimeLineFilter
+                // This allows search to work across all activities
+                ControlDataContext.ItemsSource = AllActivitiesData;
 
                 IsDataFinished = true;
                 IsFinish();
@@ -250,8 +234,11 @@ namespace PlayerActivities.Views
                 return;
             }
 
-            // Reload data with new date filter
-            GetData();
+            // Refresh the view to apply new date filter
+            if (PART_LbTimeLine?.ItemsSource != null)
+            {
+                CollectionViewSource.GetDefaultView(PART_LbTimeLine.ItemsSource).Refresh();
+            }
         }
 
         private void ScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
@@ -419,16 +406,15 @@ namespace PlayerActivities.Views
 
             PluginDatabase.InitializePluginData(true, game.Id);
             
-            DateTime? startDate = null;
-            DateTime? endDate = null;
-
-            if (PluginDatabase.PluginSettings.Settings.EnableDateFilter && PaView.ControlDataContext.SelectedDateFilter != null)
+            // Invalidate cache and reload all data
+            PluginDatabase.InvalidateCache();
+            PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: null, endDate: null);
+            
+            // Refresh view to apply current filter
+            if (PaView.PART_LbTimeLine?.ItemsSource != null)
             {
-                startDate = PaView.ControlDataContext.SelectedDateFilter.GetStartDate();
-                endDate = PaView.ControlDataContext.SelectedDateFilter.GetEndDate();
+                CollectionViewSource.GetDefaultView(PaView.PART_LbTimeLine.ItemsSource).Refresh();
             }
-
-            PaView.ControlDataContext.ItemsSource = PluginDatabase.GetActivitiesData(grouped: true, startDate: startDate, endDate: endDate);
         });
 
         public RelayCommand<Game> ShowGameSuccessStoryCommand { get; } = new RelayCommand<Game>((game) 
