@@ -468,10 +468,17 @@ namespace CommonPluginsShared
                 Logger.Warn($"Maximum redirect depth {MaxRedirects} reached for {url}");
                 return string.Empty;
             }
-            HttpClientHandler handler = new HttpClientHandler();
+            HttpClientHandler handler = new HttpClientHandler
+            {
+                AllowAutoRedirect = false,  // Manually handle redirects to preserve cookies
+                UseCookies = true
+            };
+            
+            CookieContainer cookieContainer = null;
             if (cookies != null)
             {
-                handler.CookieContainer = CreateCookiesContainer(cookies);
+                cookieContainer = CreateCookiesContainer(cookies);
+                handler.CookieContainer = cookieContainer;
             }
 
             var request = new HttpRequestMessage()
@@ -496,18 +503,24 @@ namespace CommonPluginsShared
                 {
                     response = await client.SendAsync(request).ConfigureAwait(false);
                     int statusCode = (int)response.StatusCode;
-                    bool IsRedirected = (request.RequestUri.ToString() != url) || (statusCode >= 300 && statusCode <= 399);
+                    bool IsRedirected = statusCode >= 300 && statusCode <= 399;
 
                     // We want to handle redirects ourselves so that we can determine the final redirect Location (via header)
                     if (IsRedirected)
                     {
-                        string urlNew = request.RequestUri.ToString();
                         var redirectUri = response.Headers.Location;
-                        if (!redirectUri?.IsAbsoluteUri ?? false)
+                        if (redirectUri == null)
+                        {
+                            Logger.Warn($"Redirect response missing Location header for {url}");
+                            return string.Empty;
+                        }
+                        
+                        if (!redirectUri.IsAbsoluteUri)
                         {
                             redirectUri = new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority) + redirectUri);
-                            urlNew = redirectUri.ToString();
                         }
+                        
+                        string urlNew = redirectUri.ToString();
 
                         if (keepParam)
                         {
@@ -530,7 +543,15 @@ namespace CommonPluginsShared
                         }
 
                         Common.LogDebug(true, string.Format("DownloadStringData() redirecting to {0}", urlNew));
-                        return await DownloadStringData(urlNew, cookies, userAgent, keepParam, redirectDepth + 1);
+                        
+                        // Extract updated cookies from the cookie container to pass to the next request
+                        List<HttpCookie> updatedCookies = cookies;
+                        if (cookieContainer != null)
+                        {
+                            updatedCookies = ExtractCookiesFromContainer(cookieContainer);
+                        }
+                        
+                        return await DownloadStringData(urlNew, updatedCookies, userAgent, keepParam, redirectDepth + 1);
                     }
                     else
                     {
@@ -1041,6 +1062,71 @@ namespace CommonPluginsShared
             Common.LogDebug(true, $"Final container count: {cookieContainer.Count}");
 
             return cookieContainer;
+        }
+
+        /// <summary>
+        /// Extracts all cookies from a CookieContainer and converts them to HttpCookie list.
+        /// This is needed to preserve cookies across manual redirects.
+        /// </summary>
+        /// <param name="container">The CookieContainer to extract cookies from</param>
+        /// <returns>List of HttpCookie objects</returns>
+        private static List<HttpCookie> ExtractCookiesFromContainer(CookieContainer container)
+        {
+            List<HttpCookie> httpCookies = new List<HttpCookie>();
+            
+            if (container == null)
+            {
+                return httpCookies;
+            }
+
+            // Use reflection to access the internal cookie collection
+            // CookieContainer doesn't provide a public API to enumerate all cookies
+            try
+            {
+                var table = container.GetType().InvokeMember(
+                    "m_domainTable",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.Instance,
+                    null,
+                    container,
+                    new object[] { });
+
+                if (table != null)
+                {
+                    foreach (var tableEntry in (System.Collections.IEnumerable)table)
+                    {
+                        var values = tableEntry.GetType().GetProperty("Value").GetValue(tableEntry, null);
+                        if (values != null)
+                        {
+                            foreach (var value in (System.Collections.IEnumerable)values)
+                            {
+                                var cookieCollection = value.GetType().GetProperty("Value").GetValue(value, null) as CookieCollection;
+                                if (cookieCollection != null)
+                                {
+                                    foreach (Cookie cookie in cookieCollection)
+                                    {
+                                        httpCookies.Add(new HttpCookie
+                                        {
+                                            Name = cookie.Name,
+                                            Value = cookie.Value,
+                                            Domain = cookie.Domain,
+                                            Path = cookie.Path,
+                                            Secure = cookie.Secure,
+                                            HttpOnly = cookie.HttpOnly,
+                                            Expires = cookie.Expires == DateTime.MinValue ? (DateTime?)null : cookie.Expires
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to extract cookies from CookieContainer, using fallback");
+            }
+
+            return httpCookies;
         }
 
         private static async Task<Tuple<string, int, string>> PostJsonWithClient(HttpClient client, string url, string payload, List<HttpHeader> headers)
