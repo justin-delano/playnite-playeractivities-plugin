@@ -623,7 +623,31 @@ namespace PlayerActivities.Services
                 activityTypes.Add(ActivityType.AchievementsUnlocked);
             }
 
-            // Step 3: Filter activities by type and date range
+            // TODO: Add setting to enable/disable friend achievements
+            // For now, we'll add it if Steam friends are enabled
+            bool includeFriendAchievements = PluginSettings.Settings.EnableSteamFriends;
+            if (includeFriendAchievements)
+            {
+                activityTypes.Add(ActivityType.FriendAchievementsUnlocked);
+            }
+
+            // Step 3: Add friend achievement activities if enabled
+            if (includeFriendAchievements)
+            {
+                try
+                {
+                    var friendsData = LoadFriendsData();
+                    var friendActivities = GetFriendAchievementActivities(friendsData, startDate, endDate);
+                    activityLists.AddRange(friendActivities);
+                    Logger.Info($"Added {friendActivities.Count} friend achievement activities to timeline");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Error loading friend achievement activities");
+                }
+            }
+
+            // Step 4: Filter activities by type and date range
             var filteredActivities = activityLists
                 .Where(x => activityTypes.Contains(x.Type));
 
@@ -638,7 +662,7 @@ namespace PlayerActivities.Services
                 filteredActivities = filteredActivities.Where(x => x.DateActivity <= endDate.Value.Date);
             }
 
-            // Step 4: Group activity data
+            // Step 5: Group activity data
             var groupedActivities = new ObservableCollection<ActivityListGrouped>();
 
             foreach (var activity in filteredActivities)
@@ -653,7 +677,9 @@ namespace PlayerActivities.Services
                     {
                         DateActivity = activity.DateActivity,
                         Value = activity.Value,
-                        Type = activity.Type
+                        Type = activity.Type,
+                        FriendId = activity.FriendId,
+                        FriendName = activity.FriendName
                     });
                 }
                 else
@@ -669,14 +695,16 @@ namespace PlayerActivities.Services
                             {
                                 DateActivity = activity.DateActivity,
                                 Value = activity.Value,
-                                Type = activity.Type
+                                Type = activity.Type,
+                                FriendId = activity.FriendId,
+                                FriendName = activity.FriendName
                             }
                         }
                     });
                 }
             }
 
-            // Step 5: Sort activities within each group
+            // Step 6: Sort activities within each group
             foreach (var group in groupedActivities)
             {
                 group.Activities = group.Activities
@@ -685,7 +713,7 @@ namespace PlayerActivities.Services
                     .ToList();
             }
 
-            // Step 6: Update cache only for 7-day requests
+            // Step 7: Update cache only for 7-day requests
             if (is7DayRequest)
             {
                 _cached7DaysData = groupedActivities;
@@ -932,6 +960,64 @@ namespace PlayerActivities.Services
 
             FriendsDataIsCanceled = false;
             FriendsDataIsDownloaded = true;
+        }
+
+        /// <summary>
+        /// Generates Activity objects from friend achievement unlocks.
+        /// </summary>
+        /// <param name="friendsData">The friends data containing achievement unlock information</param>
+        /// <param name="startDate">Optional start date to filter activities</param>
+        /// <param name="endDate">Optional end date to filter activities</param>
+        /// <returns>List of Activity objects representing friend achievement unlocks</returns>
+        private List<ActivityList> GetFriendAchievementActivities(FriendsData friendsData, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            var activities = new List<ActivityList>();
+
+            if (friendsData == null || friendsData.PlayerFriends == null)
+            {
+                return activities;
+            }
+
+            foreach (var friend in friendsData.PlayerFriends.Where(f => !f.IsUser))
+            {
+                foreach (var game in friend.Games)
+                {
+                    if (game.AchievementUnlocks == null || game.AchievementUnlocks.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    // Try to find the corresponding game in Playnite's database
+                    Game playniteGame = null;
+                    if (uint.TryParse(game.Id, out uint appId))
+                    {
+                        playniteGame = API.Instance.Database.Games.FirstOrDefault(g => 
+                            g.GameId == game.Id || g.Name.IsEqual(game.Name));
+                    }
+
+                    // Group achievements by day
+                    var achievementsByDay = game.AchievementUnlocks
+                        .Where(a => (!startDate.HasValue || a.UnlockTime >= startDate.Value) &&
+                                    (!endDate.HasValue || a.UnlockTime <= endDate.Value))
+                        .GroupBy(a => a.UnlockTime.Date)
+                        .OrderByDescending(g => g.Key);
+
+                    foreach (var dayGroup in achievementsByDay)
+                    {
+                        activities.Add(new ActivityList
+                        {
+                            GameContext = playniteGame ?? new Game(game.Name),
+                            DateActivity = dayGroup.Key,
+                            Type = ActivityType.FriendAchievementsUnlocked,
+                            Value = (ulong)dayGroup.Count(),
+                            FriendId = friend.FriendId,
+                            FriendName = friend.FriendPseudo
+                        });
+                    }
+                }
+            }
+
+            return activities;
         }
 
         #endregion

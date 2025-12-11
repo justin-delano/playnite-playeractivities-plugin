@@ -367,6 +367,31 @@
                                                                 <Label Content="{Binding ElementName=PART_Root, Path=Tag.SourceIcon}" FontFamily="{DynamicResource CommonFont}" Foreground="Gray" />
                                                                 <Label Margin="10,0,10,0" Content="{DynamicResource LOCPaHowLongToBeatCompleted}" />
                                                             </DockPanel>
+
+                                                            <!-- FriendAchievementsUnlocked -->
+                                                            <DockPanel>
+                                                                <DockPanel.Style>
+                                                                    <Style TargetType="DockPanel">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding ElementName=PART, Path=Tag.Type}" Value="{x:Static enum:ActivityType.FriendAchievementsUnlocked}">
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </DockPanel.Style>
+
+                                                                <Label DockPanel.Dock="Right" ToolTip="{Binding DateActivity, Converter={StaticResource LocalDateConverter}}" Content="{Binding TimeAgo}" Foreground="Gray" />
+                                                                <Label Content="{Binding ElementName=PART_Root, Path=Tag.SourceIcon}" FontFamily="{DynamicResource CommonFont}" Foreground="Gray" />
+                                                                <Label Margin="10,0,10,0">
+                                                                    <Label.Content>
+                                                                        <MultiBinding StringFormat="{}{0} unlocked {1} achievement(s).">
+                                                                            <Binding Path="FriendName" />
+                                                                            <Binding Path="Value" />
+                                                                        </MultiBinding>
+                                                                    </Label.Content>
+                                                                </Label>
+                                                            </DockPanel>
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>

@@ -37,6 +37,8 @@
 
     <sys:String x:Key="LOCPaHowLongToBeatCompleted">You have completed the game.</sys:String>
 
+    <sys:String x:Key="LOCPaFriendAchievementsUnlocked">{0} unlocked {1} achievement(s).</sys:String>
+
     <sys:String x:Key="LOCPaDayAgo">{0} day ago</sys:String>
     <sys:String x:Key="LOCPaDaysAgo">{0} days ago</sys:String>
     <sys:String x:Key="LOCPaMonthAgo">{0} month ago</sys:String>

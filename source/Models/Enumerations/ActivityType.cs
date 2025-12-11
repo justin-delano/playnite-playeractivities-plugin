@@ -5,6 +5,7 @@
         HowLongToBeatCompleted,
         AchievementsGoal, AchievementsUnlocked,
         ScreenshotsTaken,
-        PlaytimeGoal, PlaytimeFirst
+        PlaytimeGoal, PlaytimeFirst,
+        FriendAchievementsUnlocked
     }
 }

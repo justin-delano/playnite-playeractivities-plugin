@@ -184,7 +184,7 @@ namespace PlayerActivities.Clients
         /// A fully populated <see cref="PlayerFriend"/> instance containing identity, game statistics,
         /// game list, and metadata.
         /// </returns>
-        protected PlayerFriend BuildPlayerFriend(AccountInfos account, IEnumerable<AccountGameInfos> games = null)
+        protected virtual PlayerFriend BuildPlayerFriend(AccountInfos account, IEnumerable<AccountGameInfos> games = null)
         {
             try
             {
